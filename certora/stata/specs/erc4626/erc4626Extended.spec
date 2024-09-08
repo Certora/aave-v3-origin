@@ -135,9 +135,25 @@ import "../methods/methods_base.spec";
             assert assetsSum < assets1 + assets2 + 2, "Redeemed sum far larger than parts";
         }
 
+        /// @title Redeeming aTokens sum of assets is nearly equal to sum of redeeming
+        rule redeemATokensSum(uint256 shares1, uint256 shares2) {
+            env e;
+            address owner = e.msg.sender;  // Handy alias
+
+            uint256 assets1 = redeemATokens(e, shares1, owner, owner);
+            uint256 assets2 = redeemATokens(e, shares2, owner, owner);
+            mathint assetsSum = redeemATokens(e, require_uint256(shares1 + shares2), owner, owner);
+
+            assert assetsSum >= assets1 + assets2, "Redeemed sum smaller than parts";
+
+            /* See `accountsJoiningSplittingIsLimited` rule for why the following assertion
+            * is correct.
+            */
+            assert assetsSum < assets1 + assets2 + 2, "Redeemed sum far larger than parts";
+        }
+
         /* The commented out rule below (withdrawSum) timed out after 6994 seconds (see link below).
         * However, we can deduce worse bounds from previous rules, here is the proof.
-        * TODO: should we try for better bounds?
         * Let w = withdraw(assets), p = previewWithdraw(assets), s = convertToShares(assets),
         * then:
         *     p - 1 <= w <= p -- by previewWithdrawNearlyWithdraw
@@ -203,35 +219,36 @@ import "../methods/methods_base.spec";
             assert previewAssets == assets, "previewMint is unequal to mint";
         }
 
-/***************************
- *        maxDeposit        *
- ***************************/
-// The EIP4626 spec requires that the previewDeposit function must not account for maxDeposit limit or the allowance of asset tokens.
-// Since maxDeposit is a constant, it cannot have any impact on the previewDeposit value.
-// STATUS: Verified for all f except metaDeposit which has a reachability issue
-// https://vaas-stg.certora.com/output/11775/044c54bdf1c0414898e88d9b03dda5a5/?anonymousKey=aaa9c0c1c413cd1fd3cbb9fdfdcaa20a098274c5
+    /***************************
+    *        maxDeposit        *
+    ***************************/
+    // The EIP4626 spec requires that the previewDeposit function must not account for maxDeposit limit or the allowance of asset tokens.
+    // Since maxDeposit is a constant, it cannot have any impact on the previewDeposit value.
+    // STATUS: Verified for all f except metaDeposit which has a reachability issue
+    // https://vaas-stg.certora.com/output/11775/044c54bdf1c0414898e88d9b03dda5a5/?anonymousKey=aaa9c0c1c413cd1fd3cbb9fdfdcaa20a098274c5
 
-///@title maxDeposit is constant
-///@notice This rule verifies that maxDeposit returns a constant value and therefore it cannot have any impact on the previewDeposit value.
-
-// Remark (by Nissan on Aug-2025): Currently this rule fails for several functions, like mint, deposit, redeem and more:
-// https://prover.certora.com/output/66114/571e3b8d94884f9594d59efacba86999/?anonymousKey=4ffc80fdbcce585966830513ec609dfdcbe37807
-// It looks likr it is supposed to fail since maxDeposit depends on the scaled-total-suuply of the aToken which may be changed
-// by the above functions.
-rule maxDepositConstant(method f)
-  filtered {
-  f ->
-    f.contract == currentContract &&
-    f.selector != sig:metaDeposit(address,address,uint256,uint16,bool,uint256,IStaticATokenLM.PermitParams calldata, IStaticATokenLM.SignatureParams calldata).selector
-    }
-        {
-          env e;
-          address receiver;
-          uint256 maxDep1 = maxDeposit(e, receiver);
-          calldataarg args;
-          f(e, args);
-          uint256 maxDep2 = maxDeposit(e, receiver);
-          
-          assert maxDep1 == maxDep2,"maxDeposit should not change";
+    ///@title maxDeposit is constant
+    ///@notice This rule verifies that maxDeposit returns a constant value and therefore it cannot have any impact on the previewDeposit value.
+    rule maxDepositConstant(method f)
+    filtered {
+    f ->
+        f.contract == currentContract &&
+        !f.isView &&
+        !harnessOnlyMethods(f) &&
+        f.selector != sig:emergencyEtherTransfer(address,uint256).selector &&
+        f.selector != sig:deposit(uint256,address).selector &&
+        f.selector != sig:depositWithPermit(uint256,address,uint256,IERC4626StataToken.SignatureParams,bool).selector &&
+        f.selector != sig:withdraw(uint256,address,address).selector &&
+        f.selector != sig:redeem(uint256,address,address).selector &&
+        f.selector != sig:mint(uint256,address).selector
         }
-    
+            {
+            env e;
+            address receiver;
+            uint256 maxDep1 = maxDeposit(e, receiver);
+            calldataarg args;
+            f(e, args);
+            uint256 maxDep2 = maxDeposit(e, receiver);
+            
+            assert maxDep1 == maxDep2,"maxDeposit should not change";
+            }

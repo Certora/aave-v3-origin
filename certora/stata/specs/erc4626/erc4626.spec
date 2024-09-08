@@ -3,7 +3,25 @@ import "../methods/methods_base.spec";
 methods {
     function balanceOf(address) external returns (uint256) envfree;
     function totalSupply() external returns (uint256) envfree;
+    function ReserveConfiguration.getDecimals(DataTypes.ReserveConfigurationMap memory) internal returns (uint256) => limitReserveDecimals();
+    function ReserveConfiguration.getSupplyCap(DataTypes.ReserveConfigurationMap memory) internal returns (uint256) => limitReserveSupplyCap();
 }
+
+///////////////// FUNCTIONS ///////////////////////
+
+    function limitReserveDecimals() returns uint256 {
+        uint256 dec;
+        require dec >= 6 && dec <= 18;
+        return dec;
+    }
+
+    function limitReserveSupplyCap() returns uint256 {
+        uint256 cap;
+        require cap <= 10^36;
+        return cap;
+    }
+
+
 ///////////////// Properties ///////////////////////
     /****************************
     *       previewDeposit      *
@@ -407,8 +425,7 @@ methods {
             uint256 allowed = allowance(e, owner, e.msg.sender);
             uint256 balBefore = _AToken.balanceOf(receiver);
             uint256 shareBalBefore = balanceOf(owner);
-            require getStaticATokenUnderlying() == _AToken.UNDERLYING_ASSET_ADDRESS();
-            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(getStaticATokenUnderlying());
+            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(asset());
             require e.msg.sender != currentContract;
             require receiver != currentContract;
             require owner != currentContract;
@@ -453,13 +470,42 @@ methods {
             mathint allowed = allowance(e, owner, e.msg.sender);
             uint256 balBefore = balanceOf(owner);
 
-            require getStaticATokenUnderlying() == _AToken.UNDERLYING_ASSET_ADDRESS();
-            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(getStaticATokenUnderlying());
+            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(asset());
             require index > RAY();
             require e.msg.sender != currentContract;
             require receiver != currentContract;
             
             assets = redeem(e, shares, receiver, owner);
+            
+            uint256 balAfter = balanceOf(owner);
+
+            assert e.msg.sender != owner => allowed >= (balBefore - balAfter),"msg.sender should have allowance for transferring owner's shares";
+            assert to_mathint(shares) == balBefore - balAfter,"exactly the specified amount of shares must be burnt";
+        }
+
+        /***
+        * rule to check the following for the withdraw function:
+        * 1. SHOULD check msg.sender can spend owner funds using allowance.
+        * 2. MUST revert if all of shares cannot be redeemed (due to withdrawal limit being reached, slippage, the owner not having enough shares, etc).
+        */
+        // STATUS: VERIFIED
+        // https://vaas-stg.certora.com/output/11775/ff8f93d3158f40a5bb27ba35b15e771d/?anonymousKey=c0e02f130ff0d31552c6741d3b1751bda5177bfd
+        ///@title allowance and minted share amount check for redeem function
+        ///@notice This rules checks that the redeem function burns shares upto the allowance for the msg.sender and that the shares burned are exactly equal to the specified share amount
+        rule redeemATokensCheck(env e){
+            uint256 shares;
+            address receiver;
+            address owner;
+            uint256 assets;
+            mathint allowed = allowance(e, owner, e.msg.sender);
+            uint256 balBefore = balanceOf(owner);
+
+            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(asset());
+            require index > RAY();
+            require e.msg.sender != currentContract;
+            require receiver != currentContract;
+            
+            assets = redeemATokens(e, shares, receiver, owner);
             
             uint256 balAfter = balanceOf(owner);
 
@@ -559,11 +605,10 @@ methods {
             uint256 assets2;
             storage before  = lastStorage;
             
-            
             mathint shares1 = convertToShares(e1, assets1) at before;
             mathint shares2 = convertToShares(e2, assets1) at before;
             mathint shares3 = convertToShares(e2, assets2) at before;
-            mathint combinedShares = convertToShares(e3, assert_uint256(assets1 + assets2)) at before;
+            mathint combinedShares = convertToShares(e3, require_uint256(assets1 + assets2)) at before;
 
             assert shares1 == shares2,"conversion to shares should be independent of env variables including msg.sender";
             assert shares1 + shares3 <= combinedShares,"conversion should round down and not up";
@@ -609,84 +654,90 @@ methods {
             assert !reverted, "Conversion to shares reverted";
         }
 
-/************************
- *      maxWithdraw      *
- *************************/
+    /************************
+    *      maxWithdraw      *
+    *************************/
 
-// maxWithdraw must not revert
-// Nissan remark Aug-2025: this rule doesn't hold due to (a theoretical) possible arithmetical overflow
-// in the functions rayDivRoundUp/Down
-rule maxWithdrawMustntRevert(address user){
-  // This assumption subject to correct configuration of the pool, aToken and statAToken.
-  // The assumption was ran by and approved by BGD
-  require rate() > 0;
-  maxWithdraw@withrevert(user);
-  assert !lastReverted;
-}
+        // maxWithdraw must not revert
+        // Nissan remark Aug-2025: this rule doesn't hold due to (a theoretical) possible arithmetical overflow
+        // in the functions rayDivRoundUp/Down
+        rule maxWithdrawMustntRevert(address user){
+        // This assumption subject to correct configuration of the pool, aToken and statAToken.
+        // The assumption was ran by and approved by BGD
+        require rate() > RAY();
+        require rate() <= 100 * RAY();
+        maxWithdraw@withrevert(user);
+        assert !lastReverted;
+        }
 
-/// @title Ensure `maxWithdraw` conforms to conversion functions
-rule maxWithdrawConversionCompliance(address owner) {
-  env e;
-  uint256 shares = balanceOf(owner);
-  uint256 amountConverted = convertToAssets(e, shares);
-  
-  assert maxWithdraw(e, owner) <= amountConverted, "Can withdraw more than converted amount";
-}
+        /// @title Ensure `maxWithdraw` conforms to conversion functions
+        rule maxWithdrawConversionCompliance(address owner) {
+        env e;
+        uint256 shares = balanceOf(owner);
+        uint256 amountConverted = convertToAssets(e, shares);
+        
+        assert maxWithdraw(e, owner) <= amountConverted, "Can withdraw more than converted amount";
+        }
 
-/**********************
- *      maxRedeem      *
- ***********************/
+    /**********************
+    *      maxRedeem      *
+    ***********************/
 
-// maxRedeem must not revert
-// Nissan remark Aug-2025: this rule doesn't hold due to (a theoretical) possible arithmetical overflow
-// in the functions rayDivRoundUp/Down
-rule maxRedeemMustntRevert(address user) {
-  // This assumption subject to correct configuration of the pool, aToken and statAToken.
-  // The assumption was ran by and approved by BGD
-  require rate() > 0;
-  maxRedeem@withrevert(user);
-  assert !lastReverted;
-}
+        // maxRedeem must not revert
+        // Nissan remark Aug-2025: this rule doesn't hold due to (a theoretical) possible arithmetical overflow
+        // in the functions rayDivRoundUp/Down
+        rule maxRedeemMustntRevert(address user) {
+        // This assumption subject to correct configuration of the pool, aToken and statAToken.
+        // The assumption was ran by and approved by BGD
+        require rate() > RAY();
+        require rate() <= 100 * RAY();
+        maxRedeem@withrevert(user);
+        assert !lastReverted;
+        }
 
-/// @title Ensure `maxRedeem` is not higher than balance
-rule maxRedeemCompliance(address owner) {
-  uint256 shares = balanceOf(owner);
-  assert maxRedeem(owner) <= shares, "Can redeem more than available shares)";
-}
+        /// @title Ensure `maxRedeem` is not higher than balance
+        rule maxRedeemCompliance(address owner) {
+        uint256 shares = balanceOf(owner);
+        assert maxRedeem(owner) <= shares, "Can redeem more than available shares)";
+        }
 
-/************************
- *       maxDeposit      *
- *************************/
+    /************************
+    *       maxDeposit      *
+    *************************/
 
-// maxDeposit must not revert
-// Nissan remark Aug-2025: this rule doesn't hold due to (a theoretical) possible arithmetical overflow
-// in the functions rayDivRoundUp/Down
-rule maxDepositMustntRevert(address user) {
-  env e;
-  require e.msg.value ==0;
-  // This assumption subject to correct configuration of the pool, aToken and statAToken.
-  // The assumption was ran by and approved by BGD
-  require rate() > 0;
-  maxDeposit@withrevert(e, user);
-  assert !lastReverted;
-}
+        // maxDeposit must not revert
+        // Nissan remark Aug-2025: this rule doesn't hold due to (a theoretical) possible arithmetical overflow
+        // in the functions rayDivRoundUp/Down
+        rule maxDepositMustntRevert(address user) {
+        env e;
+        require e.msg.value ==0;
+        // This assumption subject to correct configuration of the pool, aToken and statAToken.
+        // The assumption was ran by and approved by BGD
+        require _AToken.scaledTotalSupply() <= 10^36; // arbitrary extremely large sum of tokens. 10^18 of 18 decimals tokens
+        require rate() > RAY();
+        require rate() <= 100 * RAY();
+        maxDeposit@withrevert(e, user);
+        assert !lastReverted;
+        }
 
-/************************
- *       maxMint      *
- *************************/
+    /************************
+    *       maxMint      *
+    *************************/
 
-// maxMint must not revert
-// Nissan remark Aug-2025: this rule doesn't hold due to (a theoretical) possible arithmetical overflow
-// in the functions rayDivRoundUp/Down
-rule maxMintMustntRevert(address user) {
-  env e;
-  require e.msg.value ==0;
-  // This assumption subject to correct configuration of the pool, aToken and statAToken.
-  // The assumption was ran by and approved by BGD
-  require rate() > 0;
-  maxMint@withrevert(e,user);
-  assert !lastReverted;
-}
+        // maxMint must not revert
+        // Nissan remark Aug-2025: this rule doesn't hold due to (a theoretical) possible arithmetical overflow
+        // in the functions rayDivRoundUp/Down
+        rule maxMintMustntRevert(address user) {
+        env e;
+        require e.msg.value ==0;
+        // This assumption subject to correct configuration of the pool, aToken and statAToken.
+        // The assumption was ran by and approved by BGD
+        require rate() > RAY();
+        require rate() <= 100 * RAY();
+        require _AToken.scaledTotalSupply() <= 10^36; // arbitrary extremely large sum of tokens. 10^18 of 18 decimals tokens
+        maxMint@withrevert(e,user);
+        assert !lastReverted;
+        }
 
     /*************************
     *       totalAssets      *
@@ -696,7 +747,8 @@ rule maxMintMustntRevert(address user) {
         rule totalAssetsMustntRevert(address user){
             // This assumption subject to correct configuration of the pool, aToken and statAToken.
             // The assumption was ran by and approved by BGD
-            require rate() > 0;
+            require rate() > RAY();
+            require rate() <= 100 * RAY();
             totalAssets@withrevert();
             assert !lastReverted;
         }

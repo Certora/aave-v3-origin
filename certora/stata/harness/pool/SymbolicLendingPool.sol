@@ -78,8 +78,31 @@ contract SymbolicLendingPool {
         return liquidityIndex;
     }
 
+    DataTypes.ReserveDataLegacy reserveLegacy;
     DataTypes.ReserveData reserve;
-    function getReserveData(address asset) external view returns (DataTypes.ReserveData memory) {
+    
+    function getReserveData(address asset) external view returns (DataTypes.ReserveDataLegacy memory) {
+        DataTypes.ReserveDataLegacy memory res;
+        
+        res.configuration = reserve.configuration;
+        res.liquidityIndex = reserve.liquidityIndex;
+        res.currentLiquidityRate = reserve.currentLiquidityRate;
+        res.variableBorrowIndex = reserve.variableBorrowIndex;
+        res.currentVariableBorrowRate = reserve.currentVariableBorrowRate;
+        res.currentStableBorrowRate = reserve.currentStableBorrowRate;
+        res.lastUpdateTimestamp = reserve.lastUpdateTimestamp;
+        res.id = reserve.id;
+        res.aTokenAddress = reserve.aTokenAddress;
+        res.stableDebtTokenAddress = reserve.stableDebtTokenAddress;
+        res.variableDebtTokenAddress = reserve.variableDebtTokenAddress;
+        res.interestRateStrategyAddress = reserve.interestRateStrategyAddress;
+        res.accruedToTreasury = reserve.accruedToTreasury;
+        res.unbacked = reserve.unbacked;
+        res.isolationModeTotalDebt = reserve.isolationModeTotalDebt;
+        return res;
+    }
+    
+    function getReserveDataExtended(address asset) external view returns (DataTypes.ReserveData memory) {
       return reserve;
     }
 }

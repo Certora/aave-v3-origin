@@ -6,10 +6,9 @@ using ATokenInstance as _AToken;
 /////////////////// Methods ////////////////////////
 
 methods{
-    // static aToken harness
-    // ---------------------
-        function getStaticATokenUnderlying() external returns (address) envfree;
-
+    // static aToken
+    // -------------
+        function asset() external returns (address) envfree;
     // erc20
     // -----
         function _.transferFrom(address,address,uint256) external => NONDET;
@@ -20,11 +19,8 @@ methods{
     // aToken
     // ------
         function _AToken.UNDERLYING_ASSET_ADDRESS() external returns (address) envfree;
+        function RAY() external returns (uint256) envfree;
 }
-
-///////////////// DEFINITIONS //////////////////////
-
-    definition RAY() returns uint256 = 10^27;
 
 ///////////////// Properties ///////////////////////
 
@@ -44,9 +40,8 @@ methods{
         rule depositCheckIndexGRayAssert2(env e){
             uint256 assets;
             address receiver;
-            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(getStaticATokenUnderlying());
+            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(asset());
             
-            require getStaticATokenUnderlying() == _AToken.UNDERLYING_ASSET_ADDRESS();//Without this a different index will be used for conversions in the Atoken contract compared to the one used in StaticAToken
             require e.msg.sender != currentContract;
             require index > RAY();//since the index is initiated as RAY and only increases after that. index < RAY gives strange behaviors causing wildly inaccurate amounts being deposited and minted
 
@@ -55,17 +50,53 @@ methods{
             assert assets * RAY() >= to_mathint(index) => shares != 0; //if the assets amount is worth at least 1 Atoken then receiver will get atleast 1 share
         }
 
+
+        // STATUS: Verified
+        // https://vaas-stg.certora.com/output/11775/b10cd30ab6fb400baeff6b61c07bb375/?anonymousKey=ccba22e832b7549efea9f0d4b1288da2c1377ccb
+        ///@title DepositATokens function mint amount check for index > RAY
+        ///@notice This rule checks that, for index > RAY, the deposit function will mint atleast 1 share as long as the specified deposit amount is worth atleast 1 AToken 
+        rule depositATokensCheckIndexGRayAssert2(env e){
+            uint256 assets;
+            address receiver;
+            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(asset());
+            
+            require e.msg.sender != currentContract;
+            require index > RAY();//since the index is initiated as RAY and only increases after that. index < RAY gives strange behaviors causing wildly inaccurate amounts being deposited and minted
+
+            uint256 shares = depositATokens(e, assets, receiver);
+            
+            assert assets * RAY() >= to_mathint(index) => shares != 0; //if the assets amount is worth at least 1 Atoken then receiver will get atleast 1 share
+        }
+
+        // STATUS: Verified
+        // https://vaas-stg.certora.com/output/11775/b10cd30ab6fb400baeff6b61c07bb375/?anonymousKey=ccba22e832b7549efea9f0d4b1288da2c1377ccb
+        ///@title Deposit with permit function mint amount check for index > RAY
+        ///@notice This rule checks that, for index > RAY, the deposit function will mint atleast 1 share as long as the specified deposit amount is worth atleast 1 AToken 
+        rule depositWithPermitCheckIndexGRayAssert2(env e){
+            uint256 assets;
+            address receiver;
+            uint256 deadline;
+            IERC4626StataToken.SignatureParams signature;
+            bool depositToAave;
+            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(asset());
+            
+            require e.msg.sender != currentContract;
+            require index > RAY();//since the index is initiated as RAY and only increases after that. index < RAY gives strange behaviors causing wildly inaccurate amounts being deposited and minted
+
+            uint256 shares = depositWithPermit(e, assets, receiver, deadline, signature, depositToAave);
+            
+            assert assets * RAY() >= to_mathint(index) => shares != 0; //if the assets amount is worth at least 1 Atoken then receiver will get atleast 1 share
+        }
+
         // STATUS: Verified
         // https://vaas-stg.certora.com/output/11775/2e162e12cafb49e688a7959a1d7dd4ca/?anonymousKey=d23ad1899e6bfa4e14fbf79799d008fa003dd633
         ///@title Deposit function mint amount check for index == RAY
         ///@notice This rule checks that, for index == RAY, the deposit function will mint atleast 1 share as long as the specified deposit amount is worth atleast 1 AToken
-
         rule depositCheckIndexERayAssert2(env e){
             uint256 assets;
             address receiver;
-            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(getStaticATokenUnderlying());
+            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(asset());
             
-            require getStaticATokenUnderlying() == _AToken.UNDERLYING_ASSET_ADDRESS();//Without this a different index will be used for conversions in the Atoken contract compared to the one used in StaticAToken
             require e.msg.sender != currentContract;
             require index == RAY();//since the index is initiated as RAY and only increases after that. index < RAY gives strange behaviors causing wildly inaccurate amounts being deposited and minted
 
@@ -74,6 +105,42 @@ methods{
             assert assets * RAY() >= to_mathint(index) => shares != 0; //if the assets amount is worth at least 1 Atoken then receiver will get atleast 1 share
         }
         
+        // STATUS: Verified
+        // https://vaas-stg.certora.com/output/11775/2e162e12cafb49e688a7959a1d7dd4ca/?anonymousKey=d23ad1899e6bfa4e14fbf79799d008fa003dd633
+        ///@title Deposit function mint amount check for index == RAY
+        ///@notice This rule checks that, for index == RAY, the deposit function will mint atleast 1 share as long as the specified deposit amount is worth atleast 1 AToken
+        rule depositATokensCheckIndexERayAssert2(env e){
+            uint256 assets;
+            address receiver;
+            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(asset());
+            
+            require e.msg.sender != currentContract;
+            require index == RAY();//since the index is initiated as RAY and only increases after that. index < RAY gives strange behaviors causing wildly inaccurate amounts being deposited and minted
+
+            uint256 shares = depositATokens(e, assets, receiver);
+            
+            assert assets * RAY() >= to_mathint(index) => shares != 0; //if the assets amount is worth at least 1 Atoken then receiver will get atleast 1 share
+        }
+
+        // STATUS: Verified
+        // https://vaas-stg.certora.com/output/11775/2e162e12cafb49e688a7959a1d7dd4ca/?anonymousKey=d23ad1899e6bfa4e14fbf79799d008fa003dd633
+        ///@title Deposit function mint amount check for index == RAY
+        ///@notice This rule checks that, for index == RAY, the deposit function will mint atleast 1 share as long as the specified deposit amount is worth atleast 1 AToken
+        rule depositWithPermitCheckIndexERayAssert2(env e){
+            uint256 assets;
+            address receiver;
+            uint256 deadline;
+            IERC4626StataToken.SignatureParams signature;
+            bool depositToAave;
+            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(asset());
+            
+            require e.msg.sender != currentContract;
+            require index == RAY();//since the index is initiated as RAY and only increases after that. index < RAY gives strange behaviors causing wildly inaccurate amounts being deposited and minted
+
+            uint256 shares = depositWithPermit(e, assets, receiver, deadline, signature, depositToAave);
+            
+            assert assets * RAY() >= to_mathint(index) => shares != 0; //if the assets amount is worth at least 1 Atoken then receiver will get atleast 1 share
+        }
     /*****************
     *      mint      *
     ******************/
@@ -93,9 +160,8 @@ methods{
             uint256 shares;
             address receiver;
             uint256 assets;
-            require getStaticATokenUnderlying() == _AToken.UNDERLYING_ASSET_ADDRESS();
             require e.msg.sender != currentContract;
-            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(getStaticATokenUnderlying());
+            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(asset());
 
             uint256 receiverBalBefore = balanceOf(e, receiver);
             require receiverBalBefore + shares <= max_uint256;//avoiding overflow
@@ -116,9 +182,8 @@ methods{
             uint256 shares;
             address receiver;
             uint256 assets;
-            require getStaticATokenUnderlying() == _AToken.UNDERLYING_ASSET_ADDRESS();
             require e.msg.sender != currentContract;
-            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(getStaticATokenUnderlying());
+            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(asset());
 
             uint256 receiverBalBefore = balanceOf(e, receiver);
             require receiverBalBefore + shares <= max_uint256;//avoiding overflow
@@ -139,9 +204,8 @@ methods{
             uint256 shares;
             address receiver;
             uint256 assets;
-            require getStaticATokenUnderlying() == _AToken.UNDERLYING_ASSET_ADDRESS();
             require e.msg.sender != currentContract;
-            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(getStaticATokenUnderlying());
+            uint256 index = _SymbolicLendingPool.getReserveNormalizedIncome(asset());
 
             uint256 receiverBalBefore = balanceOf(e, receiver);
             require receiverBalBefore + shares <= max_uint256;//avoiding overflow

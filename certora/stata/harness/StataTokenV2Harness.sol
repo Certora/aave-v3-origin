@@ -1,42 +1,40 @@
 // SPDX-License-Identifier: agpl-3.0
 pragma solidity ^0.8.10;
 
-import {StaticATokenLM, StaticATokenErrors,  IPool, IRewardsController, IERC20} from 'aave-v3-periphery/contracts/static-a-token/StaticATokenLM.sol';
+import {IERC20} from 'openzeppelin-contracts/contracts/interfaces/IERC20.sol';
+import {StataTokenV2, IPool, IRewardsController} from 'aave-v3-periphery/contracts/static-a-token/StataTokenV2.sol';
 import {SymbolicLendingPool} from './pool/SymbolicLendingPool.sol';
 
 
 
-contract StaticATokenLMHarness is StaticATokenLM{
-
+contract StataTokenV2Harness is StataTokenV2 {
     address internal _reward_A;
-    address internal _reward_B;
 
     constructor(
-        IPool pool,
-        IRewardsController rewardsController
-        ) StaticATokenLM(pool, rewardsController){}
-
-    // returns the address of the underlying asset of the static aToken
-    function getStaticATokenUnderlying() public view returns (address){
-        return _aTokenUnderlying;
+                IPool pool,
+                IRewardsController rewardsController
+    ) StataTokenV2(pool, rewardsController) {}
+  
+    function rate() external view returns (uint256) {
+        return _rate();
     }
-
+    
     // returns the address of the i-th reward token in the reward tokens list maintained by the static aToken
     function getRewardToken(uint256 i) external view returns (address) {
-        return _rewardTokens[i];
+        return rewardTokens()[i];
     }
     
     // returns the length of the reward tokens list maintained by the static aToken
     function getRewardTokensLength() external view returns (uint256) {
-        return _rewardTokens.length;
+        return rewardTokens().length;
     }
 
     // returns a user's reward index on last interaction for a given reward
-    function getRewardsIndexOnLastInteraction(address user, address reward)
-    external view returns (uint128) {
-        UserRewardsData memory currentUserRewardsData = _userRewardsData[user][reward];
-        return currentUserRewardsData.rewardsIndexOnLastInteraction;
-    }
+    // function getRewardsIndexOnLastInteraction(address user, address reward)
+    // external view returns (uint128) {
+    //     UserRewardsData memory currentUserRewardsData = _userRewardsData[user][reward];
+    //     return currentUserRewardsData.rewardsIndexOnLastInteraction;
+    // }
 
     // claims rewards for a user on the static aToken.
     // the method builds the rewards array with a single reward and calls the internal claim function with it
@@ -53,8 +51,7 @@ contract StaticATokenLMHarness is StaticATokenLM{
         // @MM - think of the best way to get rid of this require
         require(
             msg.sender == onBehalfOf ||
-            msg.sender == INCENTIVES_CONTROLLER.getClaimer(onBehalfOf),
-        StaticATokenErrors.INVALID_CLAIMER
+            msg.sender == INCENTIVES_CONTROLLER.getClaimer(onBehalfOf)
         );
         _claimRewardsOnBehalf(onBehalfOf, receiver, rewards);
     }
@@ -74,25 +71,15 @@ contract StaticATokenLMHarness is StaticATokenLM{
 
         require(
             msg.sender == onBehalfOf ||
-            msg.sender == INCENTIVES_CONTROLLER.getClaimer(onBehalfOf),
-        StaticATokenErrors.INVALID_CLAIMER
+            msg.sender == INCENTIVES_CONTROLLER.getClaimer(onBehalfOf)
         );
         _claimRewardsOnBehalf(onBehalfOf, receiver, rewards);
 
     }
-
+    
     // wrapper function for the erc20 _mint function. Used to reduce running times
     function _mintWrapper(address to, uint256 amount) external {
         _mint(to, amount);
     }
-
-    function getUserRewardsData(address user, address reward)
-    external view
-    returns (uint128) {
-        UserRewardsData memory currentUserRewardsData = _userRewardsData[user][
-        reward
-        ];
-        return currentUserRewardsData.rewardsIndexOnLastInteraction;
-    }
-
+    
 }

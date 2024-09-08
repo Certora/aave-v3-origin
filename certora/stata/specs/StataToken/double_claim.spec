@@ -2,7 +2,7 @@ import "../methods/methods_multi_reward.spec";
 
 ///////////////// Properties ///////////////////////
 
-/// @dev Broke the rule into two cases to speed up verification
+    /// @dev Broke the rule into two cases to speed up verification
 
     /**
      * @title Claiming the same reward twice assuming sufficient rewards
