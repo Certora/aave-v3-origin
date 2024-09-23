@@ -69,6 +69,7 @@ jobs:
           - VariableDebtToken.conf
           - NEW-pool-no-summarizations.conf
           - stableRemoved.conf
+          - EModeConfiguration.conf
           - NEW-pool-simple-properties.conf --rule cannotDepositInInactiveReserve --msg "cannotDepositInInactiveReserve"
           - NEW-pool-simple-properties.conf --rule cannotDepositInFrozenReserve --msg "cannotDepositInFrozenReserve"
           - NEW-pool-simple-properties.conf --rule cannotDepositZeroAmount --msg "cannotDepositZeroAmount"

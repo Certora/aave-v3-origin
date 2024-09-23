@@ -1,7 +1,7 @@
 methods {
-  function setCollateral(uint256 reserveIndex,bool collateral) external envfree;
+  function setCollateral(uint256 reserveIndex,bool enabled) external envfree;
   function isCollateralAsset(uint256 reserveIndex) external returns (bool) envfree;
-  function setBorrowable(uint256 reserveIndex,bool borrowable) external envfree;
+  function setBorrowable(uint256 reserveIndex,bool enabled) external envfree;
   function isBorrowableAsset(uint256 reserveIndex) external returns (bool) envfree;
 }
 

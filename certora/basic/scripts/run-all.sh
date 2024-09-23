@@ -1,4 +1,4 @@
-#CMN="--compilation_steps_only"
+CMN="--compilation_steps_only"
 #CMN="--typecheck_only"
 
 
@@ -32,10 +32,10 @@ echo "******** Running:  6 Stable fields are un-touched ***************"
 certoraRun $CMN certora/basic/conf/stableRemoved.conf \
            --msg "6: Stable fields are un-touched"
 
-#echo
-#echo "******** Running:  6 EModeConfiguration ***************"
-#certoraRun $CMN certora/basic/conf/EModeConfiguration.conf \
-#           --msg "6: EModeConfiguration"
+echo
+echo "******** Running:  6 EModeConfiguration ***************"
+certoraRun $CMN certora/basic/conf/EModeConfiguration.conf \
+           --msg "6: EModeConfiguration"
 
 
 echo
