@@ -54,7 +54,7 @@ jobs:
           make munged
           cd ../..
           echo "key length" ${#CERTORAKEY}
-          certoraRun certora/conf/${{ matrix.rule }} --wait_for_results
+          certoraRun certora/basic/conf/${{ matrix.rule }} --wait_for_results
         env:
           CERTORAKEY: ${{ secrets.CERTORAKEY }}
 
