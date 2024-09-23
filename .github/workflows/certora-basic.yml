@@ -49,10 +49,10 @@ jobs:
 
       - name: Verify rule ${{ matrix.rule }}
         run: |
-          cd certora
+          cd certora/basic
           touch applyHarness.patch
           make munged
-          cd ..
+          cd ../..
           echo "key length" ${#CERTORAKEY}
           certoraRun certora/conf/${{ matrix.rule }} --wait_for_results
         env:
