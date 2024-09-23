@@ -28,20 +28,4 @@ contract EModeConfigurationHarness {
   function isBorrowableAsset(uint256 reserveIndex) public returns (bool) {
     return EModeConfiguration.isBorrowableAsset(eModeCategory.isBorrowableBitmap, reserveIndex);
   }
-
-
-  /*
-
-  // Sets the Loan to Value of the reserve
-  function setLtv(uint256 ltv) public {
-    DataTypes.ReserveConfigurationMap memory configNew = reservesConfig;
-    ReserveConfiguration.setLtv(configNew, ltv);
-    reservesConfig.data = configNew.data;
-  }
-
-  // Gets the Loan to Value of the reserve
-  function getLtv() public view returns (uint256) {
-    return ReserveConfiguration.getLtv(reservesConfig);
-  }
-  */
 }
