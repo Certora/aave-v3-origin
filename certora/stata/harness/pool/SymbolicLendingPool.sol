@@ -93,4 +93,10 @@ contract SymbolicLendingPool {
     return reserve.configuration;
   }
 
+  function getVirtualUnderlyingBalance(
+    address asset
+  ) external view virtual returns (uint128) {
+    return reserve.virtualUnderlyingBalance;
+  }
+
 }
