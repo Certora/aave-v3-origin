@@ -1,0 +1,49 @@
+diff -ruN .gitignore .gitignore
+--- .gitignore	1970-01-01 02:00:00.000000000 +0200
++++ .gitignore	2024-09-10 17:05:42.342595775 +0300
+@@ -0,0 +1,2 @@
++*
++!.gitignore
+\ No newline at end of file
+diff -ruN src/contracts/protocol/libraries/logic/BorrowLogic.sol src/contracts/protocol/libraries/logic/BorrowLogic.sol
+--- src/contracts/protocol/libraries/logic/BorrowLogic.sol	2024-09-24 15:42:24.825344588 +0300
++++ src/contracts/protocol/libraries/logic/BorrowLogic.sol	2024-09-11 10:38:26.776377026 +0300
+@@ -160,7 +160,7 @@
+     DataTypes.ReserveData storage reserve = reservesData[params.asset];
+     DataTypes.ReserveCache memory reserveCache = reserve.cache();
+     reserve.updateState(reserveCache);
+-
++    repay_hook_1(reserveCache);
+     uint256 variableDebt = IERC20(reserveCache.variableDebtTokenAddress).balanceOf(
+       params.onBehalfOf
+     );
+@@ -183,10 +183,10 @@
+     if (params.amount < paybackAmount) {
+       paybackAmount = params.amount;
+     }
+-
++    repay_hook_2(reserveCache);
+     reserveCache.nextScaledVariableDebt = IVariableDebtToken(reserveCache.variableDebtTokenAddress)
+       .burn(params.onBehalfOf, paybackAmount, reserveCache.nextVariableBorrowIndex);
+-
++    repay_hook_3(reserveCache, paybackAmount);
+     reserve.updateInterestRatesAndVirtualBalance(
+       reserveCache,
+       params.asset,
+@@ -213,6 +213,7 @@
+         paybackAmount,
+         reserveCache.nextLiquidityIndex
+       );
++      repay_hook_4(reserveCache);
+       // in case of aToken repayment the msg.sender must always repay on behalf of itself
+       if (IAToken(reserveCache.aTokenAddress).scaledBalanceOf(msg.sender) == 0) {
+         userConfig.setUsingAsCollateral(reserve.id, false);
+@@ -231,4 +232,8 @@
+ 
+     return paybackAmount;
+   }
++  function repay_hook_1(DataTypes.ReserveCache memory reserveCache) internal {}
++  function repay_hook_2(DataTypes.ReserveCache memory reserveCache) internal {}
++  function repay_hook_3(DataTypes.ReserveCache memory reserveCache, uint256 paybackAmount) internal {}
++  function repay_hook_4(DataTypes.ReserveCache memory reserveCache) internal {}
+ }
