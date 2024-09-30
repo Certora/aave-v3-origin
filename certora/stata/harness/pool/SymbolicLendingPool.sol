@@ -86,4 +86,11 @@ contract SymbolicLendingPool {
   ) external view returns (DataTypes.ReserveData memory) {
     return reserve;
   }
+
+  function getConfiguration(
+    address asset
+  ) external view virtual returns (DataTypes.ReserveConfigurationMap memory) {
+    return reserve.configuration;
+  }
+
 }
