@@ -115,9 +115,9 @@ abstract contract ERC4626StataTokenUpgradeable is ERC4626Upgradeable, IERC4626St
   }
 
   ///@inheritdoc IERC4626StataToken
-  function aToken() public view returns (IERC20) {
+  function aToken() public view returns (address) {
     ERC4626StataTokenStorage storage $ = _getERC4626StataTokenStorage();
-    return $._aToken;
+    return address($._aToken);
   }
 
   ///@inheritdoc IERC4626
@@ -139,18 +139,19 @@ abstract contract ERC4626StataTokenUpgradeable is ERC4626Upgradeable, IERC4626St
 
   ///@inheritdoc IERC4626
   function maxRedeem(address owner) public view override returns (uint256) {
-    DataTypes.ReserveData memory reserveData = POOL.getReserveDataExtended(asset());
+    DataTypes.ReserveConfigurationMap memory reserveConfiguration = POOL.getConfiguration(asset());
 
     // if paused or inactive users cannot withdraw underlying
     if (
-      !ReserveConfiguration.getActive(reserveData.configuration) ||
-      ReserveConfiguration.getPaused(reserveData.configuration)
+      !ReserveConfiguration.getActive(reserveConfiguration) ||
+      ReserveConfiguration.getPaused(reserveConfiguration)
     ) {
       return 0;
     }
 
     // otherwise users can withdraw up to the available amount
-    uint256 underlyingTokenBalanceInShares = convertToShares(reserveData.virtualUnderlyingBalance);
+    uint128 virtualUnderlyingBalance = POOL.getVirtualUnderlyingBalance(asset());
+    uint256 underlyingTokenBalanceInShares = convertToShares(virtualUnderlyingBalance);
     uint256 cachedUserBalance = balanceOf(owner);
     return
       underlyingTokenBalanceInShares >= cachedUserBalance
