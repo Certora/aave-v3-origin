@@ -1,13 +1,13 @@
 diff -ruN .gitignore .gitignore
 --- .gitignore	1970-01-01 02:00:00.000000000 +0200
-+++ .gitignore	2024-09-10 17:05:42.342595775 +0300
++++ .gitignore	2024-10-06 12:37:20.578937341 +0300
 @@ -0,0 +1,2 @@
 +*
 +!.gitignore
 \ No newline at end of file
 diff -ruN src/contracts/protocol/libraries/logic/BorrowLogic.sol src/contracts/protocol/libraries/logic/BorrowLogic.sol
---- src/contracts/protocol/libraries/logic/BorrowLogic.sol	2024-09-24 15:42:24.825344588 +0300
-+++ src/contracts/protocol/libraries/logic/BorrowLogic.sol	2024-09-11 10:38:26.776377026 +0300
+--- src/contracts/protocol/libraries/logic/BorrowLogic.sol	2024-10-12 14:00:06.582321606 +0300
++++ src/contracts/protocol/libraries/logic/BorrowLogic.sol	2024-10-06 12:37:20.578937341 +0300
 @@ -160,7 +160,7 @@
      DataTypes.ReserveData storage reserve = reservesData[params.asset];
      DataTypes.ReserveCache memory reserveCache = reserve.cache();
@@ -46,4 +46,99 @@ diff -ruN src/contracts/protocol/libraries/logic/BorrowLogic.sol src/contracts/p
 +  function repay_hook_2(DataTypes.ReserveCache memory reserveCache) internal {}
 +  function repay_hook_3(DataTypes.ReserveCache memory reserveCache, uint256 paybackAmount) internal {}
 +  function repay_hook_4(DataTypes.ReserveCache memory reserveCache) internal {}
+ }
+diff -ruN src/contracts/protocol/libraries/logic/LiquidationLogic.sol src/contracts/protocol/libraries/logic/LiquidationLogic.sol
+--- src/contracts/protocol/libraries/logic/LiquidationLogic.sol	2024-10-12 14:00:06.582321606 +0300
++++ src/contracts/protocol/libraries/logic/LiquidationLogic.sol	2024-10-12 13:59:45.840355318 +0300
+@@ -102,7 +102,7 @@
+     DataTypes.ReserveData storage debtReserve = reservesData[params.debtAsset];
+     DataTypes.UserConfigurationMap storage userConfig = usersConfig[params.user];
+     vars.debtReserveCache = debtReserve.cache();
+-    debtReserve.updateState(vars.debtReserveCache);
++    debtReserve.updateState(vars.debtReserveCache);  HOOK_liquidation_after_updateState_DBT();
+ 
+     (, , , , vars.healthFactor, ) = GenericLogic.calculateUserAccountData(
+       reservesData,
+@@ -199,7 +199,7 @@
+     if (params.receiveAToken) {
+       _liquidateATokens(reservesData, reservesList, usersConfig, collateralReserve, params, vars);
+     } else {
+-      _burnCollateralATokens(collateralReserve, params, vars);
++      _burnCollateralATokens(collateralReserve, params, vars);  HOOK_liquidation_after_updateState_COL();
+     }
+ 
+     // Transfer fee to treasury if it is non-zero
+@@ -457,4 +457,6 @@
+       return (vars.collateralAmount, vars.debtAmountNeeded, 0);
+     }
+   }
++  function HOOK_liquidation_after_updateState_DBT() internal {}
++  function HOOK_liquidation_after_updateState_COL() internal {}
+ }
+diff -ruN src/contracts/protocol/libraries/logic/ReserveLogic.sol src/contracts/protocol/libraries/logic/ReserveLogic.sol
+--- src/contracts/protocol/libraries/logic/ReserveLogic.sol	2024-10-12 14:00:06.582321606 +0300
++++ src/contracts/protocol/libraries/logic/ReserveLogic.sol	2024-10-11 19:52:06.949835914 +0300
+@@ -47,17 +47,19 @@
+     DataTypes.ReserveData storage reserve
+   ) internal view returns (uint256) {
+     uint40 timestamp = reserve.lastUpdateTimestamp;
+-
++    uint256 ret_val;
+     //solium-disable-next-line
+     if (timestamp == block.timestamp) {
+       //if the index was updated in the same block, no need to perform any calculation
+-      return reserve.liquidityIndex;
++      ret_val = reserve.liquidityIndex;
+     } else {
+-      return
++      ret_val = 
+         MathUtils.calculateLinearInterest(reserve.currentLiquidityRate, timestamp).rayMul(
+           reserve.liquidityIndex
+         );
+     }
++    getNormalizedIncome_hook(ret_val,reserve.aTokenAddress);
++    return ret_val;
+   }
+ 
+   /**
+@@ -71,17 +73,19 @@
+     DataTypes.ReserveData storage reserve
+   ) internal view returns (uint256) {
+     uint40 timestamp = reserve.lastUpdateTimestamp;
+-
++    uint256 ret_val;
+     //solium-disable-next-line
+     if (timestamp == block.timestamp) {
+       //if the index was updated in the same block, no need to perform any calculation
+-      return reserve.variableBorrowIndex;
++      ret_val = reserve.variableBorrowIndex;
+     } else {
+-      return
++      ret_val =
+         MathUtils.calculateCompoundedInterest(reserve.currentVariableBorrowRate, timestamp).rayMul(
+           reserve.variableBorrowIndex
+         );
+     }
++    getNormalizedDebt_hook(ret_val,reserve.aTokenAddress);
++    return ret_val;
+   }
+ 
+   /**
+@@ -278,6 +282,7 @@
+       );
+       reserve.variableBorrowIndex = reserveCache.nextVariableBorrowIndex.toUint128();
+     }
++    _updateIndexes_hook(reserve,reserveCache);
+   }
+ 
+   /**
+@@ -310,4 +315,9 @@
+ 
+     return reserveCache;
+   }
++
++  function getNormalizedIncome_hook(uint256 ret_val, address aTokenAddress) internal view {}
++  function getNormalizedDebt_hook(uint256 ret_val, address aTokenAddress) internal view {}
++  function _updateIndexes_hook(DataTypes.ReserveData storage reserve,
++                               DataTypes.ReserveCache memory reserveCache) internal view {}
  }
