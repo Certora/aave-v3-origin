@@ -16,14 +16,21 @@ methods {
   function getReserveDataExtended(address) external returns (DataTypes.ReserveData memory) envfree;
 
   function ReserveLogic.getNormalizedIncome(DataTypes.ReserveData storage reserve)
-    internal returns (uint256) => getNormalizedIncome_CVL();
+    internal returns (uint256) => _COL_liqIND;
 
   function ReserveLogic.getNormalizedDebt(DataTypes.ReserveData storage reserve)
-    internal returns (uint256) => _DBT_dbtIND;
+    internal returns (uint256) => getNormalizedDebt_CVL();
 
-  function ReserveLogic._updateIndexes_hook(DataTypes.ReserveData storage reserve,
-                                            DataTypes.ReserveCache memory reserveCache)
-    internal => _updateIndexes_hook_CVL(reserveCache);
+  //  function ReserveLogic._updateIndexes_hook(DataTypes.ReserveData storage reserve,
+  //                                        DataTypes.ReserveCache memory reserveCache)
+  // internal => _updateIndexes_hook_CVL(reserveCache);
+
+  //  function LiquidationLogic.HOOK_liquidation_after_updateState_DBT()
+  //  internal => HOOK_liquidation_after_updateState_DBT_CVL();
+
+  function LiquidationLogic.HOOK_liquidation_after_updateState_COL()
+    internal => HOOK_liquidation_after_updateState_COL_CVL();
+
 
   function IsolationModeLogic.updateIsolatedDebtIfIsolated(
     mapping(address => DataTypes.ReserveData) storage reservesData,
@@ -47,20 +54,32 @@ methods {
     /* difficulty 90 */
 }
 
-function getNormalizedIncome_CVL() returns uint256 {
-  uint256 col_index;
+function getNormalizedDebt_CVL() returns uint256 {
+  uint256 dbt_index;
   if (INSIDE_liquidationCall)
-    return col_index;
+    return dbt_index;
   else
-    return _DBT_liqIND;
+    return _COL_liqIND;
 }
-
+/*
 function _updateIndexes_hook_CVL(DataTypes.ReserveCache reserveCache) {
   require reserveCache.aTokenAddress == _DBT_atoken => currentContract._reserves[_DBT_asset].liquidityIndex==_DBT_liqIND;
   require reserveCache.aTokenAddress == _DBT_atoken => currentContract._reserves[_DBT_asset].variableBorrowIndex==_DBT_dbtIND;
 
   require reserveCache.aTokenAddress == _COL_atoken => currentContract._reserves[_COL_asset].liquidityIndex==_COL_liqIND;
   require reserveCache.aTokenAddress == _COL_atoken => currentContract._reserves[_COL_asset].variableBorrowIndex==_COL_dbtIND;
+}
+*/
+// This is immediately after the call to updateState for the DBT token
+function HOOK_liquidation_after_updateState_DBT_CVL() {
+  require currentContract._reserves[_DBT_asset].liquidityIndex == _DBT_liqIND;
+  require currentContract._reserves[_DBT_asset].variableBorrowIndex == _DBT_dbtIND;
+}
+
+// This is immediately after the call to updateState for the COL token
+function HOOK_liquidation_after_updateState_COL_CVL() {
+  require currentContract._reserves[_COL_asset].liquidityIndex == _COL_liqIND;
+  require currentContract._reserves[_COL_asset].variableBorrowIndex == _COL_dbtIND;
 }
 
 function _calculateAvailableCollateralToLiquidateCVL() returns (uint256,uint256,uint256) {
@@ -75,7 +94,6 @@ function updateIsolatedDebtIfIsolatedCVL() {
   havoc currentContract._reserves[asset].isolationModeTotalDebt;
 }
 
-
 persistent ghost bool INSIDE_liquidationCall;
 
 persistent ghost address _DBT_asset; persistent ghost address _DBT_atoken; persistent ghost address _DBT_debt;
@@ -83,7 +101,8 @@ persistent ghost uint256 _DBT_liqIND {axiom _DBT_liqIND >= 10^27;}
 persistent ghost uint256 _DBT_dbtIND {axiom _DBT_dbtIND >= 10^27;}
 
 persistent ghost address _COL_asset; persistent ghost address _COL_atoken; persistent ghost address _COL_debt;
-persistent ghost uint256 _COL_liqIND; persistent ghost uint256 _COL_dbtIND;
+persistent ghost uint256 _COL_liqIND {axiom _COL_liqIND >= 10^27;}
+persistent ghost uint256 _COL_dbtIND {axiom _COL_dbtIND >= 10^27;}
 
 
 
@@ -92,16 +111,7 @@ function tokens_addresses_limitations_LQD(address asset, address atoken, address
                                          ) {
   require asset==100;  require atoken==10;  require debt==11; 
   require asset2==200; require atoken2==20; require debt2==21; 
-  //  require weth!=10 && weth!=11 && weth!=12;
 
-  /*  require asset != 0;
-  require atoken != debt && atoken != asset;
-  require debt != asset;*/
-  //  require weth != atoken && weth != debt && atoken != stb;
-
-  // The asset that current rule deals with. It is used in summarization CVL-functions,
-  // see for example _accrueToTreasuryCVL().
-  //  ASSET = asset;
 }
 
 
@@ -122,16 +132,16 @@ function configuration() {
 /*=====================================================================================
   Rule: solvency__liquidationCall
   =====================================================================================*/
-rule solvency__liquidationCall_DBTasset(env e) {
+rule solvency__liquidationCall_COLasset(env e) {
   INSIDE_liquidationCall = false;
   configuration();
 
-  DataTypes.ReserveData reserve = getReserveDataExtended(_DBT_asset);
+  DataTypes.ReserveData reserve = getReserveDataExtended(_COL_asset);
   require reserve.lastUpdateTimestamp <= require_uint40(e.block.timestamp);
   
-  mathint __totSUP_aToken; __totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_DBT_atoken, e));
-  mathint __totSUP_debt;  __totSUP_debt = to_mathint(aTokenTotalSupplyCVL(_DBT_debt, e));
-  uint128 __virtual_bal = getReserveDataExtended(_DBT_asset).virtualUnderlyingBalance;
+  mathint __totSUP_aToken; __totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_COL_atoken, e));
+  mathint __totSUP_debt;  __totSUP_debt = to_mathint(aTokenTotalSupplyCVL(_COL_debt, e));
+  uint128 __virtual_bal = getReserveDataExtended(_COL_asset).virtualUnderlyingBalance;
 
   // BASIC ASSUMPTION FOR THE RULE
   require isVirtualAccActive(reserve.configuration.data);
@@ -143,33 +153,27 @@ rule solvency__liquidationCall_DBTasset(env e) {
   require __totSUP_aToken <= 10^27; // Without this requirement we get a timeout
                                     // I believe it's due inaccure RAY-calculations.
 
-  bool exists_debt = scaledTotalSupplyCVL(_DBT_debt)!=0;
+  bool exists_debt = scaledTotalSupplyCVL(_COL_debt)!=0;
   require exists_debt;
 
   // THE FUNCTION CALL
-  address user; uint256 debtToCover; bool receiveAToken;
-  //  require receiveAToken==true;
   require _COL_asset != _DBT_asset;
-
+  address _user; uint256 _debtToCover; bool _receiveAToken;
   INSIDE_liquidationCall = true;
-  liquidationCall(e, _COL_asset, _DBT_asset, user, debtToCover, receiveAToken);
+  liquidationCall(e, _COL_asset, _DBT_asset, _user, _debtToCover, _receiveAToken);
   INSIDE_liquidationCall = false;
   
-  DataTypes.ReserveData reserve2 = getReserveDataExtended(_DBT_asset);
-  assert reserve2.lastUpdateTimestamp == assert_uint40(e.block.timestamp);
-  require assert_uint256(reserve2.liquidityIndex) == _DBT_liqIND;
-  require assert_uint256(reserve2.variableBorrowIndex) == _DBT_dbtIND;
+  DataTypes.ReserveData reserve2 = getReserveDataExtended(_COL_asset);
   
-  mathint __totSUP_aToken__; __totSUP_aToken__ = to_mathint(aTokenTotalSupplyCVL(_DBT_atoken, e));
-  mathint __totSUP_debt__;   __totSUP_debt__   = to_mathint(aTokenTotalSupplyCVL(_DBT_debt, e));
-  uint128 __virtual_bal__ = getReserveDataExtended(_DBT_asset).virtualUnderlyingBalance;
+  mathint __totSUP_aToken__; __totSUP_aToken__ = to_mathint(aTokenTotalSupplyCVL(_COL_atoken, e));
+  mathint __totSUP_debt__;   __totSUP_debt__   = to_mathint(aTokenTotalSupplyCVL(_COL_debt, e));
+  uint128 __virtual_bal__ = getReserveDataExtended(_COL_asset).virtualUnderlyingBalance;
 
-  assert __totSUP_aToken__ == __totSUP_aToken;
+  assert __totSUP_debt__ == __totSUP_debt;
   
   //THE ASSERTION
   assert to_mathint(__totSUP_aToken__) <= __virtual_bal__ + __totSUP_debt__ + CONST
-    + reserve2.variableBorrowIndex / RAY()
-    //    + _DBT_dbtIND / RAY()
+    + reserve2.liquidityIndex / RAY()
     ;
 }
 

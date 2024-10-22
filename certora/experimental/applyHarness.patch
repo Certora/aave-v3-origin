@@ -1,13 +1,13 @@
 diff -ruN .gitignore .gitignore
 --- .gitignore	1970-01-01 02:00:00.000000000 +0200
-+++ .gitignore	2024-10-06 12:37:20.578937341 +0300
++++ .gitignore	2024-10-06 12:37:20.000000000 +0300
 @@ -0,0 +1,2 @@
 +*
 +!.gitignore
 \ No newline at end of file
 diff -ruN src/contracts/protocol/libraries/logic/BorrowLogic.sol src/contracts/protocol/libraries/logic/BorrowLogic.sol
---- src/contracts/protocol/libraries/logic/BorrowLogic.sol	2024-10-12 14:00:06.582321606 +0300
-+++ src/contracts/protocol/libraries/logic/BorrowLogic.sol	2024-10-06 12:37:20.578937341 +0300
+--- src/contracts/protocol/libraries/logic/BorrowLogic.sol	2024-10-22 12:09:46.089416461 +0300
++++ src/contracts/protocol/libraries/logic/BorrowLogic.sol	2024-10-06 12:37:20.000000000 +0300
 @@ -160,7 +160,7 @@
      DataTypes.ReserveData storage reserve = reservesData[params.asset];
      DataTypes.ReserveCache memory reserveCache = reserve.cache();
@@ -48,8 +48,8 @@ diff -ruN src/contracts/protocol/libraries/logic/BorrowLogic.sol src/contracts/p
 +  function repay_hook_4(DataTypes.ReserveCache memory reserveCache) internal {}
  }
 diff -ruN src/contracts/protocol/libraries/logic/LiquidationLogic.sol src/contracts/protocol/libraries/logic/LiquidationLogic.sol
---- src/contracts/protocol/libraries/logic/LiquidationLogic.sol	2024-10-12 14:00:06.582321606 +0300
-+++ src/contracts/protocol/libraries/logic/LiquidationLogic.sol	2024-10-12 13:59:45.840355318 +0300
+--- src/contracts/protocol/libraries/logic/LiquidationLogic.sol	2024-10-22 12:09:46.090415961 +0300
++++ src/contracts/protocol/libraries/logic/LiquidationLogic.sol	2024-10-13 13:15:48.576798374 +0300
 @@ -102,7 +102,7 @@
      DataTypes.ReserveData storage debtReserve = reservesData[params.debtAsset];
      DataTypes.UserConfigurationMap storage userConfig = usersConfig[params.user];
@@ -59,6 +59,15 @@ diff -ruN src/contracts/protocol/libraries/logic/LiquidationLogic.sol src/contra
  
      (, , , , vars.healthFactor, ) = GenericLogic.calculateUserAccountData(
        reservesData,
+@@ -121,7 +121,7 @@
+       vars.debtReserveCache,
+       params,
+       vars.healthFactor
+-    );
++    ); HOOK_liquidation_after_calculateDebt(vars.userTotalDebt);
+ 
+     ValidationLogic.validateLiquidationCall(
+       userConfig,
 @@ -199,7 +199,7 @@
      if (params.receiveAToken) {
        _liquidateATokens(reservesData, reservesList, usersConfig, collateralReserve, params, vars);
@@ -68,16 +77,17 @@ diff -ruN src/contracts/protocol/libraries/logic/LiquidationLogic.sol src/contra
      }
  
      // Transfer fee to treasury if it is non-zero
-@@ -457,4 +457,6 @@
+@@ -457,4 +457,7 @@
        return (vars.collateralAmount, vars.debtAmountNeeded, 0);
      }
    }
 +  function HOOK_liquidation_after_updateState_DBT() internal {}
 +  function HOOK_liquidation_after_updateState_COL() internal {}
++  function HOOK_liquidation_after_calculateDebt(uint256 userTotalDebt) internal {}
  }
 diff -ruN src/contracts/protocol/libraries/logic/ReserveLogic.sol src/contracts/protocol/libraries/logic/ReserveLogic.sol
---- src/contracts/protocol/libraries/logic/ReserveLogic.sol	2024-10-12 14:00:06.582321606 +0300
-+++ src/contracts/protocol/libraries/logic/ReserveLogic.sol	2024-10-11 19:52:06.949835914 +0300
+--- src/contracts/protocol/libraries/logic/ReserveLogic.sol	2024-10-22 12:09:46.090415961 +0300
++++ src/contracts/protocol/libraries/logic/ReserveLogic.sol	2024-10-11 19:52:06.000000000 +0300
 @@ -47,17 +47,19 @@
      DataTypes.ReserveData storage reserve
    ) internal view returns (uint256) {

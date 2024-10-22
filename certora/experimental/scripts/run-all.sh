@@ -45,9 +45,33 @@ certoraRun $CMN certora/experimental/confs/solvency/cumulateToLiquidityIndexCVL-
            --msg "8: cumulateToLiquidityIndexCVL-check.conf ::  check_cumulateToLiquidityIndexCVL"
 
 
-#echo "******** Running:  9 ***************"
-#certoraRun $CMN certora/experimental/confs/solvency.conf --rule solvency__liquidationCall \
-#           --msg "9: solvency.conf ::  liquidationCall"
+echo "******** Running:  9a ***************"
+certoraRun $CMN certora/experimental/confs/solvency/liquidationCall-DBTasset-main.conf \
+           --msg "9a: liquidationCall-DBTasset-main.conf"
+
+echo "******** Running:  9b ***************"
+certoraRun $CMN certora/experimental/confs/solvency/liquidationCall-DBTasset-lemma.conf \
+           --msg "9b: liquidationCall-DBTasset-lemma.conf"
+
+echo "******** Running:  9c ***************"
+certoraRun $CMN certora/experimental/confs/solvency/liquidationCall-DBTasset-totSUP0.conf \
+           --msg "9c: liquidationCall-DBTasset-totSUP0.conf"
+
+echo "******** Running:  9d ***************"
+certoraRun $CMN certora/experimental/confs/solvency/liquidationCall-COLasset-main.conf \
+           --msg "9d: liquidationCall-COLasset-main.conf"
+
+echo "******** Running:  9e ***************"
+certoraRun $CMN certora/experimental/confs/solvency/liquidationCall-COLasset-lemma.conf \
+           --msg "9e: liquidationCall-COLasset-lemma.conf"
+
+echo "******** Running:  9f ***************"
+certoraRun $CMN certora/experimental/confs/solvency/liquidationCall-COLasset-totSUP0.conf \
+           --msg "9f: liquidationCall-COLasset-totSUP0.conf"
+
+echo "******** Running:  9g ***************"
+certoraRun $CMN certora/experimental/confs/solvency/liquidationCall-COLasset-totSUP0-lemma.conf \
+           --msg "9g: liquidationCall-COLasset-totSUP0.conf"
 
 
 
