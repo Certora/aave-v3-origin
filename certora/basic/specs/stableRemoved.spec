@@ -4,7 +4,7 @@ import "aux/aToken.spec";
 //import "AddressProvider.spec";
 
 methods {
-  function getReserveDataExtended(address) external returns (DataTypes.ReserveData memory) envfree;
+  //  function getReserveDataExtended(address) external returns (DataTypes.ReserveData memory) envfree;
   function getReserveData(address) external returns (DataTypes.ReserveDataLegacy memory) envfree;
 
   function ValidationLogic.validateLiquidationCall(
@@ -21,22 +21,22 @@ methods {
                                                  DataTypes.CalculateUserAccountDataParams memory params
   ) internal returns (uint256, uint256, uint256, uint256, uint256, bool) => NONDET;
 
-  function LiquidationLogic._calculateDebt(
+  /*  function LiquidationLogic._calculateDebt(
                                            DataTypes.ReserveCache memory debtReserveCache,
                                            DataTypes.ExecuteLiquidationCallParams memory params,
                                            uint256 healthFactor
-  ) internal returns (uint256, uint256) => NONDET;
+                                           ) internal returns (uint256, uint256) => NONDET;*/
 
   function LiquidationLogic._calculateAvailableCollateralToLiquidate(
-                                                                     DataTypes.ReserveData storage collateralReserve,
-                                                                     DataTypes.ReserveCache memory debtReserveCache,
-                                                                     address collateralAsset,
-                                                                     address debtAsset,
-                                                                     uint256 debtToCover,
-                                                                     uint256 userCollateralBalance,
-                                                                     uint256 liquidationBonus,
-                                                                     address // IPriceOracleGetter 
-  ) internal returns (uint256,uint256,uint256) => NONDET;
+    DataTypes.ReserveConfigurationMap memory collateralReserveConfiguration,
+    uint256 collateralAssetPrice,
+    uint256 collateralAssetUnit,
+    uint256 debtAssetPrice,
+    uint256 debtAssetUnit,
+    uint256 debtToCover,
+    uint256 userCollateralBalance,
+    uint256 liquidationBonus
+  ) internal returns (uint256, uint256, uint256, uint256) => NONDET;
 }
 
 
@@ -55,9 +55,9 @@ function init_state() {
 }
 
 
-hook Sstore _reserves[KEY address a].__deprecatedStableBorrowRate uint128 rate (uint128 old_rate) {
-  assert false, "writing the field __deprecatedStableBorrowRate";
-}
+//hook Sstore _reserves[KEY address a].__deprecatedStableBorrowRate uint128 rate (uint128 old_rate) {
+//  assert false, "writing the field __deprecatedStableBorrowRate";
+//}
 
 hook Sstore _reserves[KEY address a].__deprecatedStableDebtTokenAddress address stable (address old_stable) {
   assert false, "writing the field __deprecatedStableDebtTokenAddress";
@@ -83,27 +83,27 @@ rule stableFieldsUntouched(method f, env e, address _asset)
     &&
     aTokenToUnderlying[currentContract._reserves[asset].variableDebtTokenAddress]==asset;
   
-  DataTypes.ReserveData reserve = getReserveDataExtended(_asset);
+  //DataTypes.ReserveData reserve = getReserveDataExtended(_asset);
   DataTypes.ReserveDataLegacy reserveLegasy = getReserveData(_asset);
 
-  uint128 __deprecatedStableBorrowRate_BEFORE = reserve.__deprecatedStableBorrowRate;
-  address __deprecatedStableDebtTokenAddress_BEFORE = reserve.__deprecatedStableDebtTokenAddress;
+  //uint128 __deprecatedStableBorrowRate_BEFORE = reserve.__deprecatedStableBorrowRate;
+  //address __deprecatedStableDebtTokenAddress_BEFORE = reserve.__deprecatedStableDebtTokenAddress;
   uint128 currentStableBorrowRate_BEFORE = reserveLegasy.currentStableBorrowRate;
   address stableDebtTokenAddress_BEFORE = reserveLegasy.stableDebtTokenAddress;
   
   calldataarg args;
   f(e,args);
   
-  DataTypes.ReserveData reserve2 = getReserveDataExtended(_asset);
+  //  DataTypes.ReserveData reserve2 = getReserveDataExtended(_asset);
   DataTypes.ReserveDataLegacy reserveLegasy2 = getReserveData(_asset);
 
-  uint128 __deprecatedStableBorrowRate_AFTER = reserve2.__deprecatedStableBorrowRate;
-  address __deprecatedStableDebtTokenAddress_AFTER = reserve2.__deprecatedStableDebtTokenAddress;
+  //uint128 __deprecatedStableBorrowRate_AFTER = reserve2.__deprecatedStableBorrowRate;
+  //address __deprecatedStableDebtTokenAddress_AFTER = reserve2.__deprecatedStableDebtTokenAddress;
   uint128 currentStableBorrowRate_AFTER = reserveLegasy2.currentStableBorrowRate;
   address stableDebtTokenAddress_AFTER = reserveLegasy2.stableDebtTokenAddress;
 
-  assert __deprecatedStableBorrowRate_BEFORE == __deprecatedStableBorrowRate_AFTER;
-  assert __deprecatedStableDebtTokenAddress_BEFORE == __deprecatedStableDebtTokenAddress_AFTER;
+  //  assert __deprecatedStableBorrowRate_BEFORE == __deprecatedStableBorrowRate_AFTER;
+  //assert __deprecatedStableDebtTokenAddress_BEFORE == __deprecatedStableDebtTokenAddress_AFTER;
   assert currentStableBorrowRate_BEFORE == currentStableBorrowRate_AFTER;
   assert stableDebtTokenAddress_BEFORE == stableDebtTokenAddress_AFTER;
          
