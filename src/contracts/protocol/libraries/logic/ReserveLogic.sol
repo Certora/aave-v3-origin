@@ -12,6 +12,8 @@ import {PercentageMath} from '../math/PercentageMath.sol';
 import {Errors} from '../helpers/Errors.sol';
 import {DataTypes} from '../types/DataTypes.sol';
 import {SafeCast} from '../../../dependencies/openzeppelin/contracts/SafeCast.sol';
+import {IAToken} from '../../../interfaces/IAToken.sol';
+import {UserConfiguration} from '../configuration/UserConfiguration.sol';
 
 /**
  * @title ReserveLogic library
@@ -25,6 +27,7 @@ library ReserveLogic {
   using GPv2SafeERC20 for IERC20;
   using ReserveLogic for DataTypes.ReserveData;
   using ReserveConfiguration for DataTypes.ReserveConfigurationMap;
+  using UserConfiguration for DataTypes.UserConfigurationMap;
 
   // See `IPool` for descriptions
   event ReserveDataUpdated(
@@ -35,6 +38,9 @@ library ReserveLogic {
     uint256 liquidityIndex,
     uint256 variableBorrowIndex
   );
+
+  event ReserveUsedAsCollateralDisabled(address indexed reserve, address indexed user);
+  event DeficitCovered(address indexed reserve, address caller, uint256 amountDecreased);
 
   /**
    * @notice Returns the ongoing normalized income for the reserve.
@@ -95,7 +101,7 @@ library ReserveLogic {
   ) internal {
     // If time didn't pass since last stored timestamp, skip state update
     //solium-disable-next-line
-    if (reserve.lastUpdateTimestamp == uint40(block.timestamp)) {
+    if (reserveCache.reserveLastUpdateTimestamp == uint40(block.timestamp)) {
       return;
     }
 
@@ -179,7 +185,7 @@ library ReserveLogic {
           totalDebt: totalVariableDebt,
           reserveFactor: reserveCache.reserveFactor,
           reserve: reserveAddress,
-          usingVirtualBalance: reserve.configuration.getIsVirtualAccActive(),
+          usingVirtualBalance: reserveCache.reserveConfiguration.getIsVirtualAccActive(),
           virtualUnderlyingBalance: reserve.virtualUnderlyingBalance
         })
       );
@@ -188,7 +194,7 @@ library ReserveLogic {
     reserve.currentVariableBorrowRate = nextVariableRate.toUint128();
 
     // Only affect virtual balance if the reserve uses it
-    if (reserve.configuration.getIsVirtualAccActive()) {
+    if (reserveCache.reserveConfiguration.getIsVirtualAccActive()) {
       if (liquidityAdded > 0) {
         reserve.virtualUnderlyingBalance += liquidityAdded.toUint128();
       }
@@ -309,5 +315,72 @@ library ReserveLogic {
     ).scaledTotalSupply();
 
     return reserveCache;
+  }
+
+  /**
+   * @notice Reduces a portion or all of the deficit of a specified reserve by burning the equivalent aToken `amount`.
+   * The caller of this method MUST always be the Umbrella contract and the Umbrella contract is assumed to never have debt.
+   * @dev Emits the `DeficitCovered() event`.
+   * @dev If the coverage admin covers its entire balance, `ReserveUsedAsCollateralDisabled()` is emitted.
+   * @param reservesData The state of all the reserves
+   * @param userConfig The user configuration mapping that tracks the supplied/borrowed assets
+   * @param params The additional parameters needed to execute the eliminateDeficit function
+   */
+  function executeEliminateDeficit(
+    mapping(address => DataTypes.ReserveData) storage reservesData,
+    DataTypes.UserConfigurationMap storage userConfig,
+    DataTypes.ExecuteEliminateDeficitParams memory params
+  ) external {
+    require(params.amount != 0, Errors.INVALID_AMOUNT);
+
+    DataTypes.ReserveData storage reserve = reservesData[params.asset];
+    uint256 currentDeficit = reserve.deficit;
+
+    require(currentDeficit != 0, Errors.RESERVE_NOT_IN_DEFICIT);
+    require(!userConfig.isBorrowingAny(), Errors.USER_CANNOT_HAVE_DEBT);
+
+    DataTypes.ReserveCache memory reserveCache = reserve.cache();
+    reserve.updateState(reserveCache);
+    bool isActive = reserveCache.reserveConfiguration.getActive();
+    require(isActive, Errors.RESERVE_INACTIVE);
+
+    uint256 balanceWriteOff = params.amount;
+
+    if (params.amount > currentDeficit) {
+      balanceWriteOff = currentDeficit;
+    }
+
+    if (reserveCache.reserveConfiguration.getIsVirtualAccActive()) {
+      IAToken(reserveCache.aTokenAddress).burn(
+        msg.sender,
+        reserveCache.aTokenAddress,
+        balanceWriteOff,
+        reserveCache.nextLiquidityIndex
+      );
+      // update ir due to updateState
+      reserve.updateInterestRatesAndVirtualBalance(reserveCache, params.asset, 0, 0);
+    } else {
+      // This is a special case to allow mintable assets (ex. GHO), which by definition cannot be supplied
+      // and thus do not use virtual underlying balances.
+      // In that case, the procedure is 1) sending the underlying asset to the aToken and
+      // 2) trigger the handleRepayment() for the aToken to dispose of those assets
+      IERC20(params.asset).safeTransferFrom(
+        msg.sender,
+        reserveCache.aTokenAddress,
+        balanceWriteOff
+      );
+      IAToken(reserveCache.aTokenAddress).handleRepayment(
+        msg.sender,
+        // In the context of GHO it's only relevant that the address has no debt.
+        // Passing the pool is fitting as it's handeling the repayment on behalf of the protocol.
+        address(this),
+        balanceWriteOff
+      );
+      // updating the IR is not needed in this case, as the IR is constant for assets without virtual accounting.
+    }
+
+    reserve.deficit -= balanceWriteOff.toUint128();
+
+    emit DeficitCovered(params.asset, msg.sender, balanceWriteOff);
   }
 }

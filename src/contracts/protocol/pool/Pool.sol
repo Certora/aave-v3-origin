@@ -17,6 +17,7 @@ import {IERC20WithPermit} from '../../interfaces/IERC20WithPermit.sol';
 import {IPoolAddressesProvider} from '../../interfaces/IPoolAddressesProvider.sol';
 import {IPool} from '../../interfaces/IPool.sol';
 import {IACLManager} from '../../interfaces/IACLManager.sol';
+import {IAccessControl} from '../../dependencies/openzeppelin/contracts/IAccessControl.sol';
 import {PoolStorage} from './PoolStorage.sol';
 
 /**
@@ -61,6 +62,17 @@ abstract contract Pool is VersionedInitializable, PoolStorage, IPool {
    */
   modifier onlyBridge() {
     _onlyBridge();
+    _;
+  }
+
+  /**
+   * @dev Only the umbrella contract can call functions marked by this modifier.
+   */
+  modifier onlyUmbrella() {
+    require(
+      ADDRESSES_PROVIDER.getAddress(bytes32('UMBRELLA')) == msg.sender,
+      Errors.CALLER_NOT_UMBRELLA
+    );
     _;
   }
 
@@ -424,17 +436,10 @@ abstract contract Pool is VersionedInitializable, PoolStorage, IPool {
   }
 
   /// @inheritdoc IPool
-  function getReserveDataExtended(
-    address asset
-  ) external view returns (DataTypes.ReserveData memory) {
-    return _reserves[asset];
-  }
-
-  /// @inheritdoc IPool
   function getReserveData(
     address asset
   ) external view virtual override returns (DataTypes.ReserveDataLegacy memory) {
-    DataTypes.ReserveData memory reserve = _reserves[asset];
+    DataTypes.ReserveData storage reserve = _reserves[asset];
     DataTypes.ReserveDataLegacy memory res;
 
     res.configuration = reserve.configuration;
@@ -686,7 +691,7 @@ abstract contract Pool is VersionedInitializable, PoolStorage, IPool {
   /// @inheritdoc IPool
   function configureEModeCategory(
     uint8 id,
-    DataTypes.EModeCategoryBaseConfiguration memory category
+    DataTypes.EModeCategoryBaseConfiguration calldata category
   ) external virtual override onlyPoolConfigurator {
     // category 0 is reserved for volatile heterogeneous assets and it's always disabled
     require(id != 0, Errors.EMODE_CATEGORY_RESERVED);
@@ -720,7 +725,7 @@ abstract contract Pool is VersionedInitializable, PoolStorage, IPool {
   function getEModeCategoryData(
     uint8 id
   ) external view virtual override returns (DataTypes.EModeCategoryLegacy memory) {
-    DataTypes.EModeCategory memory category = _eModeCategories[id];
+    DataTypes.EModeCategory storage category = _eModeCategories[id];
     return
       DataTypes.EModeCategoryLegacy({
         ltv: category.ltv,
@@ -828,6 +833,30 @@ abstract contract Pool is VersionedInitializable, PoolStorage, IPool {
         referralCode: referralCode
       })
     );
+  }
+
+  /// @inheritdoc IPool
+  function eliminateReserveDeficit(address asset, uint256 amount) external override onlyUmbrella {
+    ReserveLogic.executeEliminateDeficit(
+      _reserves,
+      _usersConfig[msg.sender],
+      DataTypes.ExecuteEliminateDeficitParams({asset: asset, amount: amount})
+    );
+  }
+
+  /// @inheritdoc IPool
+  function getReserveDeficit(address asset) external view virtual returns (uint256) {
+    return _reserves[asset].deficit;
+  }
+
+  /// @inheritdoc IPool
+  function getReserveAToken(address asset) external view virtual returns (address) {
+    return _reserves[asset].aTokenAddress;
+  }
+
+  /// @inheritdoc IPool
+  function getReserveVariableDebtToken(address asset) external view virtual returns (address) {
+    return _reserves[asset].variableDebtTokenAddress;
   }
 
   /// @inheritdoc IPool
