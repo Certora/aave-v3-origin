@@ -1,0 +1,235 @@
+diff -ruN .gitignore .gitignore
+--- .gitignore	1970-01-01 02:00:00.000000000 +0200
++++ .gitignore	2024-11-04 16:11:11.634004128 +0200
+@@ -0,0 +1,2 @@
++*
++!.gitignore
+\ No newline at end of file
+diff -ruN src/contracts/protocol/libraries/logic/BorrowLogic.sol src/contracts/protocol/libraries/logic/BorrowLogic.sol
+--- src/contracts/protocol/libraries/logic/BorrowLogic.sol	2024-11-14 12:08:14.292819048 +0200
++++ src/contracts/protocol/libraries/logic/BorrowLogic.sol	2024-11-04 16:11:11.634004128 +0200
+@@ -160,7 +160,7 @@
+     DataTypes.ReserveData storage reserve = reservesData[params.asset];
+     DataTypes.ReserveCache memory reserveCache = reserve.cache();
+     reserve.updateState(reserveCache);
+-
++    repay_hook_1(reserveCache);
+     uint256 variableDebt = IERC20(reserveCache.variableDebtTokenAddress).balanceOf(
+       params.onBehalfOf
+     );
+@@ -183,10 +183,10 @@
+     if (params.amount < paybackAmount) {
+       paybackAmount = params.amount;
+     }
+-
++    repay_hook_2(reserveCache);
+     reserveCache.nextScaledVariableDebt = IVariableDebtToken(reserveCache.variableDebtTokenAddress)
+       .burn(params.onBehalfOf, paybackAmount, reserveCache.nextVariableBorrowIndex);
+-
++    repay_hook_3(reserveCache, paybackAmount);
+     reserve.updateInterestRatesAndVirtualBalance(
+       reserveCache,
+       params.asset,
+@@ -213,6 +213,7 @@
+         paybackAmount,
+         reserveCache.nextLiquidityIndex
+       );
++      repay_hook_4(reserveCache);
+       bool isCollateral = userConfig.isUsingAsCollateral(reserve.id);
+       // in case of aToken repayment the msg.sender must always repay on behalf of itself
+       if (isCollateral && IAToken(reserveCache.aTokenAddress).scaledBalanceOf(msg.sender) == 0) {
+@@ -232,4 +233,8 @@
+ 
+     return paybackAmount;
+   }
++  function repay_hook_1(DataTypes.ReserveCache memory reserveCache) internal {}
++  function repay_hook_2(DataTypes.ReserveCache memory reserveCache) internal {}
++  function repay_hook_3(DataTypes.ReserveCache memory reserveCache, uint256 paybackAmount) internal {}
++  function repay_hook_4(DataTypes.ReserveCache memory reserveCache) internal {}
+ }
+diff -ruN src/contracts/protocol/libraries/logic/LiquidationLogic.sol src/contracts/protocol/libraries/logic/LiquidationLogic.sol
+--- src/contracts/protocol/libraries/logic/LiquidationLogic.sol	2024-11-14 12:08:14.293819031 +0200
++++ src/contracts/protocol/libraries/logic/LiquidationLogic.sol	2024-11-14 12:07:45.702309561 +0200
+@@ -122,7 +122,9 @@
+     DataTypes.ReserveData storage debtReserve = reservesData[params.debtAsset];
+     DataTypes.UserConfigurationMap storage userConfig = usersConfig[params.user];
+     vars.debtReserveCache = debtReserve.cache();
++    HOOK_liquidation_before_updateState_DBT();
+     debtReserve.updateState(vars.debtReserveCache);
++    HOOK_liquidation_after_updateState_DBT();
+ 
+     (
+       vars.totalCollateralInBaseCurrency,
+@@ -150,6 +152,7 @@
+       params.user
+     );
+ 
++    HOOK_liquidation_before_validateLiquidationCall(vars.userReserveDebt);
+     ValidationLogic.validateLiquidationCall(
+       userConfig,
+       collateralReserve,
+@@ -267,7 +270,7 @@
+     }
+ 
+     bool hasNoCollateralLeft = vars.totalCollateralInBaseCurrency ==
+-      vars.collateralToLiquidateInBaseCurrency;
++      vars.collateralToLiquidateInBaseCurrency; HOOK_liquidation_before_burnDebtTokens(hasNoCollateralLeft);
+     _burnDebtTokens(
+       vars.debtReserveCache,
+       debtReserve,
+@@ -278,7 +281,8 @@
+       vars.actualDebtToLiquidate,
+       hasNoCollateralLeft
+     );
+-
++    HOOK_liquidation_after_burnDebtTokens(hasNoCollateralLeft, vars.actualDebtToLiquidate, vars.userReserveDebt);
++    
+     // IsolationModeTotalDebt only discounts `actualDebtToLiquidate`, not the fully burned amount in case of deficit creation.
+     // This is by design as otherwise debt debt ceiling would render ineffective if a collateral asset faces bad debt events.
+     // The governance can decide the raise the ceiling to discount manifested deficit.
+@@ -290,10 +294,12 @@
+       vars.actualDebtToLiquidate
+     );
+ 
++    //HOOK_liquidation_before_burnCollateralATokens();
+     if (params.receiveAToken) {
+       _liquidateATokens(reservesData, reservesList, usersConfig, collateralReserve, params, vars);
+     } else {
+-      _burnCollateralATokens(collateralReserve, params, vars);
++      _burnCollateralATokens(collateralReserve, params, vars);  
++      //HOOK_liquidation_after_burnCollateralATokens(vars.actualCollateralToLiquidate);
+     }
+ 
+     // Transfer fee to treasury if it is non-zero
+@@ -313,13 +319,15 @@
+         vars.liquidationProtocolFeeAmount
+       );
+     }
+-
++    
+     // burn bad debt if necessary
+     // Each additional debt asset already adds around ~75k gas to the liquidation.
+     // To keep the liquidation gas under control, 0 usd collateral positions are not touched, as there is no immediate benefit in burning or transfering to treasury.
++    HOOK_liquidation_before_burnBadDebt();
+     if (hasNoCollateralLeft && userConfig.isBorrowingAny()) {
+       _burnBadDebt(reservesData, reservesList, userConfig, params.reservesCount, params.user);
+     }
++    HOOK_liquidation_after_burnBadDebt();
+ 
+     // Transfers the debt asset being repaid to the aToken, where the liquidity is kept
+     IERC20(params.debtAsset).safeTransferFrom(
+@@ -358,7 +366,11 @@
+     LiquidationCallLocalVars memory vars
+   ) internal {
+     DataTypes.ReserveCache memory collateralReserveCache = collateralReserve.cache();
++        HOOK_burnCollateralATokens_before_updateState();
+     collateralReserve.updateState(collateralReserveCache);
++        HOOK_burnCollateralATokens_after_updateState();
++
++        HOOK_liquidation_before_burnCollateralATokens();
+     collateralReserve.updateInterestRatesAndVirtualBalance(
+       collateralReserveCache,
+       params.collateralAsset,
+@@ -373,7 +385,9 @@
+       vars.actualCollateralToLiquidate,
+       collateralReserveCache.nextLiquidityIndex
+     );
++    HOOK_liquidation_after_burnCollateralATokens(vars.actualCollateralToLiquidate);
+   }
++  
+ 
+   /**
+    * @notice Liquidates the user aTokens by transferring them to the liquidator.
+@@ -578,7 +592,7 @@
+         continue;
+       }
+ 
+-      address reserveAddress = reservesList[i];
++      address reserveAddress = reservesList[i];       HOOK_burnBadDebt_inside_loop(reserveAddress);
+       if (reserveAddress == address(0)) {
+         continue;
+       }
+@@ -601,4 +615,16 @@
+       );
+     }
+   }
++  function HOOK_liquidation_before_updateState_DBT() internal {}
++  function HOOK_liquidation_after_updateState_DBT() internal {}
++  function HOOK_burnCollateralATokens_before_updateState() internal {}
++  function HOOK_burnCollateralATokens_after_updateState() internal {}
++  function HOOK_liquidation_before_validateLiquidationCall(uint256 userTotalDebt) internal {}
++  function HOOK_liquidation_before_burnDebtTokens(bool hasNoCollateralLeft) internal {}
++  function HOOK_liquidation_after_burnDebtTokens(bool hasNoCollateralLeft, uint256 actualDebtToLiquidate, uint256 userReserveDebt) internal {}
++  function HOOK_liquidation_before_burnCollateralATokens() internal {}
++  function HOOK_liquidation_after_burnCollateralATokens(uint256 actualCollateralToLiquidate) internal {}
++  function HOOK_liquidation_before_burnBadDebt() internal {}
++  function HOOK_burnBadDebt_inside_loop(address reserveAddress) internal {}
++  function HOOK_liquidation_after_burnBadDebt() internal {}
+ }
+diff -ruN src/contracts/protocol/libraries/logic/ReserveLogic.sol src/contracts/protocol/libraries/logic/ReserveLogic.sol
+--- src/contracts/protocol/libraries/logic/ReserveLogic.sol	2024-11-14 12:08:14.294819013 +0200
++++ src/contracts/protocol/libraries/logic/ReserveLogic.sol	2024-11-04 16:11:11.635004117 +0200
+@@ -53,17 +53,19 @@
+     DataTypes.ReserveData storage reserve
+   ) internal view returns (uint256) {
+     uint40 timestamp = reserve.lastUpdateTimestamp;
+-
++    uint256 ret_val;
+     //solium-disable-next-line
+     if (timestamp == block.timestamp) {
+       //if the index was updated in the same block, no need to perform any calculation
+-      return reserve.liquidityIndex;
++      ret_val = reserve.liquidityIndex;
+     } else {
+-      return
++      ret_val = 
+         MathUtils.calculateLinearInterest(reserve.currentLiquidityRate, timestamp).rayMul(
+           reserve.liquidityIndex
+         );
+     }
++    getNormalizedIncome_hook(ret_val,reserve.aTokenAddress);
++    return ret_val;
+   }
+ 
+   /**
+@@ -77,17 +79,19 @@
+     DataTypes.ReserveData storage reserve
+   ) internal view returns (uint256) {
+     uint40 timestamp = reserve.lastUpdateTimestamp;
+-
++    uint256 ret_val;
+     //solium-disable-next-line
+     if (timestamp == block.timestamp) {
+       //if the index was updated in the same block, no need to perform any calculation
+-      return reserve.variableBorrowIndex;
++      ret_val = reserve.variableBorrowIndex;
+     } else {
+-      return
++      ret_val =
+         MathUtils.calculateCompoundedInterest(reserve.currentVariableBorrowRate, timestamp).rayMul(
+           reserve.variableBorrowIndex
+         );
+     }
++    getNormalizedDebt_hook(ret_val,reserve.aTokenAddress);
++    return ret_val;
+   }
+ 
+   /**
+@@ -284,6 +288,7 @@
+       );
+       reserve.variableBorrowIndex = reserveCache.nextVariableBorrowIndex.toUint128();
+     }
++    _updateIndexes_hook(reserve,reserveCache);
+   }
+ 
+   /**
+@@ -383,4 +388,9 @@
+ 
+     emit DeficitCovered(params.asset, msg.sender, balanceWriteOff);
+   }
++
++  function getNormalizedIncome_hook(uint256 ret_val, address aTokenAddress) internal view {}
++  function getNormalizedDebt_hook(uint256 ret_val, address aTokenAddress) internal view {}
++  function _updateIndexes_hook(DataTypes.ReserveData storage reserve,
++                               DataTypes.ReserveCache memory reserveCache) internal view {}
+ }
