@@ -110,6 +110,7 @@ library ReserveLogic {
 
     //solium-disable-next-line
     reserve.lastUpdateTimestamp = uint40(block.timestamp);
+    reserveCache.reserveLastUpdateTimestamp = uint40(block.timestamp);
   }
 
   /**
@@ -318,7 +319,9 @@ library ReserveLogic {
   }
 
   /**
-   * @notice Reduces a portion or all of the deficit of a specified reserve by burning the equivalent aToken `amount`.
+   * @notice Reduces a portion or all of the deficit of a specified reserve by burning:
+   * - the equivalent aToken `amount` for assets with virtual accounting enabled
+   * - the equivalent `amount` of underlying for assets with virtual accounting disabled (e.g. GHO)
    * The caller of this method MUST always be the Umbrella contract and the Umbrella contract is assumed to never have debt.
    * @dev Emits the `DeficitCovered() event`.
    * @dev If the coverage admin covers its entire balance, `ReserveUsedAsCollateralDisabled()` is emitted.
@@ -350,15 +353,30 @@ library ReserveLogic {
       balanceWriteOff = currentDeficit;
     }
 
+    uint256 userBalance = reserveCache.reserveConfiguration.getIsVirtualAccActive()
+      ? IAToken(reserveCache.aTokenAddress).scaledBalanceOf(msg.sender).rayMul(
+        reserveCache.nextLiquidityIndex
+      )
+      : IERC20(params.asset).balanceOf(msg.sender);
+    require(balanceWriteOff <= userBalance, Errors.NOT_ENOUGH_AVAILABLE_USER_BALANCE);
+
+    // update ir due to updateState
+    reserve.updateInterestRatesAndVirtualBalance(reserveCache, params.asset, 0, 0);
+
     if (reserveCache.reserveConfiguration.getIsVirtualAccActive()) {
+      // assets without virtual accounting can never be a collateral
+      bool isCollateral = userConfig.isUsingAsCollateral(reserve.id);
+      if (isCollateral && balanceWriteOff == userBalance) {
+        userConfig.setUsingAsCollateral(reserve.id, false);
+        emit ReserveUsedAsCollateralDisabled(params.asset, msg.sender);
+      }
+
       IAToken(reserveCache.aTokenAddress).burn(
         msg.sender,
         reserveCache.aTokenAddress,
         balanceWriteOff,
         reserveCache.nextLiquidityIndex
       );
-      // update ir due to updateState
-      reserve.updateInterestRatesAndVirtualBalance(reserveCache, params.asset, 0, 0);
     } else {
       // This is a special case to allow mintable assets (ex. GHO), which by definition cannot be supplied
       // and thus do not use virtual underlying balances.
@@ -369,6 +387,7 @@ library ReserveLogic {
         reserveCache.aTokenAddress,
         balanceWriteOff
       );
+      // it is assumed that handleRepayment does not touch the variable debt balance
       IAToken(reserveCache.aTokenAddress).handleRepayment(
         msg.sender,
         // In the context of GHO it's only relevant that the address has no debt.
@@ -376,7 +395,6 @@ library ReserveLogic {
         address(this),
         balanceWriteOff
       );
-      // updating the IR is not needed in this case, as the IR is constant for assets without virtual accounting.
     }
 
     reserve.deficit -= balanceWriteOff.toUint128();

@@ -17,7 +17,6 @@ import {IERC20WithPermit} from '../../interfaces/IERC20WithPermit.sol';
 import {IPoolAddressesProvider} from '../../interfaces/IPoolAddressesProvider.sol';
 import {IPool} from '../../interfaces/IPool.sol';
 import {IACLManager} from '../../interfaces/IACLManager.sol';
-import {IAccessControl} from '../../dependencies/openzeppelin/contracts/IAccessControl.sol';
 import {PoolStorage} from './PoolStorage.sol';
 
 /**
@@ -40,6 +39,9 @@ abstract contract Pool is VersionedInitializable, PoolStorage, IPool {
   using ReserveLogic for DataTypes.ReserveData;
 
   IPoolAddressesProvider public immutable ADDRESSES_PROVIDER;
+
+  // @notice The name used to fetch the UMBRELLA contract
+  bytes32 public constant UMBRELLA = 'UMBRELLA';
 
   /**
    * @dev Only pool configurator can call functions marked by this modifier.
@@ -69,10 +71,7 @@ abstract contract Pool is VersionedInitializable, PoolStorage, IPool {
    * @dev Only the umbrella contract can call functions marked by this modifier.
    */
   modifier onlyUmbrella() {
-    require(
-      ADDRESSES_PROVIDER.getAddress(bytes32('UMBRELLA')) == msg.sender,
-      Errors.CALLER_NOT_UMBRELLA
-    );
+    require(ADDRESSES_PROVIDER.getAddress(UMBRELLA) == msg.sender, Errors.CALLER_NOT_UMBRELLA);
     _;
   }
 
@@ -455,6 +454,10 @@ abstract contract Pool is VersionedInitializable, PoolStorage, IPool {
     res.accruedToTreasury = reserve.accruedToTreasury;
     res.unbacked = reserve.unbacked;
     res.isolationModeTotalDebt = reserve.isolationModeTotalDebt;
+    // This is a temporary workaround for integrations that are broken by Aave 3.2
+    // While the new pool data provider is backward compatible, some integrations hard-code an old implementation
+    // To allow them to not have any infrastructural blocker, a mock must be configured in the Aave Pool Addresses Provider, returning zero on all required view methods, instead of reverting
+    res.stableDebtTokenAddress = ADDRESSES_PROVIDER.getAddress(bytes32('MOCK_STABLE_DEBT'));
     return res;
   }
 
