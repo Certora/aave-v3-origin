@@ -138,6 +138,11 @@ function configuration() {
 }
 
 
+rule dummy() {
+  assert true;
+
+}
+
 
 /*=====================================================================================
   Rule: same_indexes__liquidationCall

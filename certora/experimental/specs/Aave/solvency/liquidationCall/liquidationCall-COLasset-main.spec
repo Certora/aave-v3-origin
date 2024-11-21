@@ -17,14 +17,13 @@ persistent ghost bool INSIDE_liquidationCall;
 persistent ghost bool INSIDE_burnBadDebt;
 
 persistent ghost address _DBT_asset; persistent ghost address _DBT_atoken; persistent ghost address _DBT_debt;
-//persistent ghost uint256 _DBT_liqIND {axiom _DBT_liqIND >= 10^27;}
-//persistent ghost uint256 _DBT_dbtIND {axiom _DBT_dbtIND >= 10^27;}
 
 persistent ghost address _COL_asset; persistent ghost address _COL_atoken; persistent ghost address _COL_debt;
 persistent ghost uint256 _COL_liqIND {axiom _COL_liqIND >= 10^27;}
 persistent ghost uint256 _COL_dbtIND {axiom _COL_dbtIND >= 10^27;}
 
 
+persistent ghost address USER;
 persistent ghost mathint DELTA;
 persistent ghost mathint ORIG_totSUP_aToken;
 persistent ghost mathint ORIG_totSUP_debt;
@@ -36,44 +35,35 @@ persistent ghost mathint INTR_totSUP_debt;
 persistent ghost uint128 INTR_VB;
 persistent ghost uint128 INTR_deficit;
 
+persistent ghost mathint INTR2_totSUP_aToken;
+persistent ghost mathint INTR2_totSUP_debt;
+persistent ghost uint128 INTR2_VB;
+persistent ghost uint128 INTR2_deficit;
+
+persistent ghost mathint INTR3_totSUP_aToken;
+persistent ghost mathint INTR3_totSUP_debt;
+persistent ghost uint128 INTR3_VB;
+persistent ghost uint128 INTR3_deficit;
+
+persistent ghost mathint INTR4_totSUP_aToken;
+persistent ghost mathint INTR4_totSUP_debt;
+persistent ghost uint128 INTR4_VB;
+persistent ghost uint128 INTR4_deficit;
+
+persistent ghost mathint FINAL_totSUP_aToken;
+persistent ghost mathint FINAL_totSUP_debt;
+persistent ghost uint128 FINAL_VB;
+persistent ghost uint128 FINAL_deficit;
+
 
 methods {
-  //TEMPORARY !!! we remove the following
-  function LiquidationLogic._burnBadDebt(
-    mapping(address => DataTypes.ReserveData) storage reservesData,
-    mapping(uint256 => address) storage reservesList,
-    DataTypes.UserConfigurationMap storage userConfig,
-    uint256 reservesCount,
-    address user
-  ) internal => NONDET;
-
-  function ReserveLogic.getNormalizedIncome(DataTypes.ReserveData storage reserve)
-    internal returns (uint256) => _COL_liqIND;
-
-  function ReserveLogic.getNormalizedDebt(DataTypes.ReserveData storage reserve)
-    internal returns (uint256) => getNormalizedDebt_CVL();
-
-  function LiquidationLogic.HOOK_liquidation_before_burnCollateralATokens()
-    internal with (env e) => HOOK_liquidation_before_burnCollateralATokens_CVL(e);
-
-  function LiquidationLogic.HOOK_liquidation_after_burnCollateralATokens(uint256 actualCollateralToLiquidate)
-    internal with (env e) => HOOK_liquidation_after_burnCollateralATokens_CVL(e, actualCollateralToLiquidate);
-
-  //  function ReserveLogic.updateState(
-  //  DataTypes.ReserveData storage reserve,
-  //  DataTypes.ReserveCache memory reserveCache
-  //) internal => updateState_CVL(reserveCache);
-
-    //  function ReserveLogic._updateIndexes_hook(DataTypes.ReserveData storage reserve,
-  //                                        DataTypes.ReserveCache memory reserveCache)
-  // internal => _updateIndexes_hook_CVL(reserveCache);
-
-  //  function LiquidationLogic.HOOK_liquidation_after_updateState_DBT()
-  //  internal => HOOK_liquidation_after_updateState_DBT_CVL();
-
-  function LiquidationLogic.HOOK_burnCollateralATokens_after_updateState()
-    internal => HOOK_burnCollateralATokens_after_updateState_CVL();
-
+  //function LiquidationLogic.DUMMY_vars_get_val1()
+  //  internal returns (uint256,uint256,uint256) => NONDET;
+  //function LiquidationLogic.DUMMY_vars_get_val2()
+  //  internal returns (uint256,uint256,uint256) => NONDET;
+  
+  //function LiquidationLogic.DUMMY_get_maxLiquidatableDebt()
+  //  internal returns (uint256) => NONDET;
 
   function IsolationModeLogic.updateIsolatedDebtIfIsolated(
     mapping(address => DataTypes.ReserveData) storage reservesData,
@@ -94,9 +84,104 @@ methods {
     uint256 liquidationBonus
   ) internal returns (uint256,uint256,uint256,uint256) =>
     _calculateAvailableCollateralToLiquidateCVL();
+
+  function LiquidationLogic._burnBadDebt(
+    mapping(address => DataTypes.ReserveData) storage reservesData,
+    mapping(uint256 => address) storage reservesList,
+    DataTypes.UserConfigurationMap storage userConfig,
+    uint256 reservesCount,
+    address user
+  ) internal with (env e) => _burnBadDebt_CVL(e);
 }
 
-function HOOK_liquidation_before_burnCollateralATokens_CVL(env e) {
+function _burnBadDebt_CVL(env e) {
+  INSIDE_liquidationCall = false;
+
+  mathint curr_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_COL_atoken, e));
+  mathint curr_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(_COL_debt, e));
+  uint128 curr_VB            = getReserveDataExtended(_COL_asset).virtualUnderlyingBalance;
+  uint128 curr_deficit       = getReserveDataExtended(_COL_asset).deficit;
+  
+  if (curr_totSUP_aToken<=curr_VB + curr_totSUP_debt + curr_deficit + DELTA + _COL_liqIND / RAY()) {
+    havoc_all(e);
+    mathint after_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_COL_atoken, e));
+    mathint after_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(_COL_debt, e));
+    uint128 after_VB            = getReserveDataExtended(_COL_asset).virtualUnderlyingBalance;
+    uint128 after_deficit       = getReserveDataExtended(_COL_asset).deficit;
+
+    require
+      after_totSUP_aToken <=
+      after_VB + after_totSUP_debt + after_deficit + DELTA +
+      _COL_liqIND / RAY() + _COL_dbtIND / RAY()
+      ;
+
+    require
+      getReserveDataExtended(_COL_asset).variableBorrowIndex == getNormalizedDebt_CVL();
+
+    require
+      getReserveDataExtended(_COL_asset).liquidityIndex == _COL_liqIND;
+  }
+  INSIDE_liquidationCall = true;
+}
+
+// This is immediately after the call to updateState for the COL token
+function _calculateAvailableCollateralToLiquidateCVL() returns (uint256,uint256,uint256,uint256) {
+  uint256 a; uint256 b; uint256 c; uint256 d;
+  return (a,b,c,d);
+}
+
+
+// The function updateIsolatedDebtIfIsolated(...) only writes to the field isolationModeTotalDebt.
+function updateIsolatedDebtIfIsolatedCVL() {
+  address asset;
+  havoc currentContract._reserves[asset].isolationModeTotalDebt;
+}
+
+
+/*==============================================================================================
+  Summarizations
+  ==============================================================================================*/
+methods {
+  function ReserveLogic.getNormalizedIncome(DataTypes.ReserveData storage reserve)
+    internal returns (uint256) => _COL_liqIND;
+
+  function ReserveLogic.getNormalizedDebt(DataTypes.ReserveData storage reserve)
+    internal returns (uint256) => getNormalizedDebt_CVL();
+}
+
+function getNormalizedDebt_CVL() returns uint256 {
+  if (INSIDE_liquidationCall) {
+    uint256 any_index;
+    return any_index;
+  }
+  else
+    return _COL_liqIND;
+}
+
+
+/*================================================================================================
+  Summarizations of HOOKS function 
+  ================================================================================================*/
+methods {
+  function LiquidationLogic.HOOK_liquidation_before_burnCollateralATokens(uint256 actualCollateralToLiquidate)
+    internal with (env e) => HOOK_liquidation_before_burnCollateralATokens_CVL(e, actualCollateralToLiquidate);
+
+  function LiquidationLogic.HOOK_liquidation_after_burnCollateralATokens(uint256 actualCollateralToLiquidate)
+    internal with (env e) => HOOK_liquidation_after_burnCollateralATokens_CVL(e, actualCollateralToLiquidate);
+
+  function LiquidationLogic.HOOK_burnCollateralATokens_after_updateState()
+    internal => HOOK_burnCollateralATokens_after_updateState_CVL();
+
+  function LiquidationLogic.HOOK_liquidation_before_burnBadDebt()
+    internal with (env e) => HOOK_liquidation_before_burnBadDebt_CVL(e);
+
+  function LiquidationLogic.HOOK_liquidation_after_burnBadDebt()
+    internal with (env e) => HOOK_liquidation_after_burnBadDebt_CVL(e);
+
+}
+
+
+function HOOK_liquidation_before_burnCollateralATokens_CVL(env e, uint256 actualCollateralToLiquidate) {
   INSIDE_liquidationCall = false;
   
   mathint curr_totSUP_aToken;  curr_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_COL_atoken, e));
@@ -110,6 +195,12 @@ function HOOK_liquidation_before_burnCollateralATokens_CVL(env e) {
   assert ORIG_deficit == curr_deficit;
 
   assert ORIG_totSUP_aToken <= ORIG_VB + ORIG_totSUP_debt + ORIG_deficit + DELTA;
+
+  uint256 scaled = totalSupplyByToken[_COL_atoken]; uint256 IND = _COL_liqIND;
+  assert
+    to_mathint(rayMulCVLPrecise( require_uint256(scaled - rayDivCVLPrecise(actualCollateralToLiquidate,IND)), IND) )
+    <=
+    rayMulCVLPrecise(scaled,IND) - actualCollateralToLiquidate + IND/RAY();
 
   INSIDE_liquidationCall = true;
 }
@@ -133,66 +224,45 @@ function HOOK_liquidation_after_burnCollateralATokens_CVL(env e, uint256 actualC
   INSIDE_liquidationCall = true;
 }
 
-
-
-
-
-
-
-
-function getNormalizedDebt_CVL() returns uint256 {
-  if (INSIDE_liquidationCall) {
-    uint256 dbt_index;
-    return dbt_index;
-  }
-  else
-    return _COL_liqIND;
-}
-
-function updateState_CVL(DataTypes.ReserveCache reserveCache) {
-  //  require reserveCache.aTokenAddress == 0;
-  //require reserveCache.aTokenAddress == _DBT_atoken => currentContract._reserves[_DBT_asset].liquidityIndex==_DBT_liqIND;
-  //require reserveCache.aTokenAddress == _DBT_atoken => currentContract._reserves[_DBT_asset].variableBorrowIndex==_DBT_dbtIND;
-
-  //require reserveCache.aTokenAddress == _COL_atoken => currentContract._reserves[_COL_asset].liquidityIndex==_COL_liqIND;
-  //require reserveCache.aTokenAddress == _COL_atoken => currentContract._reserves[_COL_asset].variableBorrowIndex==_COL_dbtIND;
-}
-
-/*
-function _updateIndexes_hook_CVL(DataTypes.ReserveCache reserveCache) {
-  require reserveCache.aTokenAddress == _DBT_atoken => currentContract._reserves[_DBT_asset].liquidityIndex==_DBT_liqIND;
-  require reserveCache.aTokenAddress == _DBT_atoken => currentContract._reserves[_DBT_asset].variableBorrowIndex==_DBT_dbtIND;
-
-  require reserveCache.aTokenAddress == _COL_atoken => currentContract._reserves[_COL_asset].liquidityIndex==_COL_liqIND;
-  require reserveCache.aTokenAddress == _COL_atoken => currentContract._reserves[_COL_asset].variableBorrowIndex==_COL_dbtIND;
-}
-*/
-// This is immediately after the call to updateState for the DBT token
-function HOOK_liquidation_after_updateState_DBT_CVL() {
-  //  require currentContract._reserves[_DBT_asset].liquidityIndex == _DBT_liqIND;
-  //require currentContract._reserves[_DBT_asset].variableBorrowIndex == _DBT_dbtIND;
-}
-
-// This is immediately after the call to updateState for the COL token
 function HOOK_burnCollateralATokens_after_updateState_CVL() {
-  //  havoc currentContract._reserves[_COL_asset].liquidityIndex;
-  //havoc currentContract._reserves[_COL_asset].variableBorrowIndex;
-  
   require currentContract._reserves[_COL_asset].liquidityIndex == _COL_liqIND;
   require currentContract._reserves[_COL_asset].variableBorrowIndex == _COL_dbtIND;
 }
 
-function _calculateAvailableCollateralToLiquidateCVL() returns (uint256,uint256,uint256,uint256) {
-  uint256 a; uint256 b; uint256 c; uint256 d; // require c==0;
-  return (a,b,c,d);
+function HOOK_liquidation_before_burnBadDebt_CVL(env e) {
+  INSIDE_liquidationCall = false;
+  
+  INTR2_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_COL_atoken, e));
+  INTR2_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(_COL_debt, e));
+  INTR2_VB            = getReserveDataExtended(_COL_asset).virtualUnderlyingBalance;
+  INTR2_deficit       = getReserveDataExtended(_COL_asset).deficit;
+
+  assert INTR2_totSUP_aToken <= INTR2_VB + INTR2_totSUP_debt + INTR2_deficit + DELTA + _COL_liqIND / RAY();
+
+  INSIDE_liquidationCall = true;
+  INSIDE_burnBadDebt = true;
+}
+
+function HOOK_liquidation_after_burnBadDebt_CVL(env e) {
+  INSIDE_liquidationCall = false;
+  INSIDE_burnBadDebt = false;
+
+  FINAL_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_COL_atoken, e));
+  FINAL_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(_COL_debt, e));
+  FINAL_VB            = getReserveDataExtended(_COL_asset).virtualUnderlyingBalance;
+  FINAL_deficit       = getReserveDataExtended(_COL_asset).deficit;
+
+  assert
+    FINAL_totSUP_aToken <= FINAL_VB + FINAL_totSUP_debt + FINAL_deficit + DELTA +
+    _COL_liqIND / RAY() + _COL_dbtIND / RAY();
+
+  INSIDE_liquidationCall = true;
 }
 
 
-// The function updateIsolatedDebtIfIsolated(...) only writes to the field isolationModeTotalDebt.
-function updateIsolatedDebtIfIsolatedCVL() {
-  address asset;
-  havoc currentContract._reserves[asset].isolationModeTotalDebt;
-}
+  
+
+
 
 
 
@@ -240,8 +310,6 @@ rule solvency__liquidationCall_COLasset(env e) {
 
   // THE MAIN REQUIREMENT
   require ORIG_totSUP_aToken <= ORIG_VB + ORIG_totSUP_debt + ORIG_deficit + DELTA;
-  //  uint256 CONST;
-  //require to_mathint(__totSUP_aToken) <= __virtual_bal + __totSUP_debt + CONST;
 
   require ORIG_totSUP_aToken <= 10^27; // Without this requirement we get a timeout
                                        // I believe it's due inaccure RAY-calculations.
@@ -250,29 +318,30 @@ rule solvency__liquidationCall_COLasset(env e) {
   require exists_debt;
 
   // THE FUNCTION CALL
-  address _user; uint256 _debtToCover; bool _receiveAToken;
+  uint256 _debtToCover; bool _receiveAToken;
   INSIDE_liquidationCall = true;
-  liquidationCall(e, _COL_asset, _DBT_asset, _user, _debtToCover, _receiveAToken);
+  liquidationCall(e, _COL_asset, _DBT_asset, USER, _debtToCover, _receiveAToken);
   INSIDE_liquidationCall = false;
   
   DataTypes.ReserveData reserve2 = getReserveDataExtended(_COL_asset);
   
-  mathint FINAL_totSUP_aToken; FINAL_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_COL_atoken, e));
-  mathint FINAL_totSUP_debt;   FINAL_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(_COL_debt, e));
-  uint128 FINAL_VB = getReserveDataExtended(_COL_asset).virtualUnderlyingBalance;
-  uint128 FINAL_deficit = getReserveDataExtended(_COL_asset).deficit;
+  mathint final_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_COL_atoken, e));
+  mathint final_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(_COL_debt, e));
+  uint128 final_VB = getReserveDataExtended(_COL_asset).virtualUnderlyingBalance;
+  uint128 final_deficit = getReserveDataExtended(_COL_asset).deficit;
 
-  assert true;
+  //  assert true;
   /*
   assert FINAL_totSUP_aToken == INTR_totSUP_aToken;
   assert FINAL_totSUP_debt == INTR_totSUP_debt;
   assert FINAL_deficit == INTR_deficit;
-  assert FINAL_VB == INTR_VB;
+  assert FINAL_VB == INTR_VB;*/
   
   //THE ASSERTION
   assert
-    FINAL_totSUP_aToken <= FINAL_VB + FINAL_totSUP_debt + FINAL_deficit + DELTA
+    final_totSUP_aToken <= final_VB + final_totSUP_debt + final_deficit + DELTA
     + reserve2.variableBorrowIndex / RAY()
-    ;*/
+    + reserve2.liquidityIndex / RAY()
+    ;
 }
 
