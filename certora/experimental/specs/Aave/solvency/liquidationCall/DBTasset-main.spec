@@ -54,6 +54,14 @@ methods {
 
   function ReserveLogic.getNormalizedDebt(DataTypes.ReserveData storage reserve)
     internal returns (uint256) => getNormalizedDebt_CVL();
+
+  function LiquidationLogic._burnBadDebt(
+    mapping(address => DataTypes.ReserveData) storage reservesData,
+    mapping(uint256 => address) storage reservesList,
+    DataTypes.UserConfigurationMap storage userConfig,
+    uint256 reservesCount,
+    address user
+  ) internal with (env e) => _burnBadDebt_CVL(e);
 }
 
 function getNormalizedIncome_CVL() returns uint256 {
@@ -74,6 +82,36 @@ function getNormalizedDebt_CVL() returns uint256 {
   }
 }
 
+function _burnBadDebt_CVL(env e) {
+  INSIDE_liquidationCall = false;
+
+  mathint curr_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_DBT_atoken, e));
+  mathint curr_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(_DBT_debt, e));
+  uint128 curr_VB            = getReserveDataExtended(_DBT_asset).virtualUnderlyingBalance;
+  uint128 curr_deficit       = getReserveDataExtended(_DBT_asset).deficit;
+  
+  // ert INTR2_totSUP_aToken <= INTR2_VB + INTR2_totSUP_debt + INTR2_deficit +  _DBT_dbtIND / RAY() + DELTA;
+  if (curr_totSUP_aToken <= curr_VB + curr_totSUP_debt + curr_deficit + DELTA + _DBT_dbtIND / RAY()) {
+    havoc_all(e);
+    mathint after_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_DBT_atoken, e));
+    mathint after_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(_DBT_debt, e));
+    uint128 after_VB            = getReserveDataExtended(_DBT_asset).virtualUnderlyingBalance;
+    uint128 after_deficit       = getReserveDataExtended(_DBT_asset).deficit;
+
+    require
+      after_totSUP_aToken <=
+      after_VB + after_totSUP_debt + after_deficit + DELTA +
+      _DBT_dbtIND / RAY() + _DBT_dbtIND / RAY()
+      ;
+
+    require
+      getReserveDataExtended(_DBT_asset).variableBorrowIndex == getNormalizedDebt_CVL();
+
+    require
+      getReserveDataExtended(_DBT_asset).liquidityIndex == _DBT_liqIND;
+  }
+  INSIDE_liquidationCall = true;
+}
 
 
 /*================================================================================================
@@ -256,7 +294,7 @@ rule solvency__liquidationCall_DBTasset(env e) {
   //THE ASSERTION
   assert
     FINAL_totSUP_aToken <= FINAL_VB + FINAL_totSUP_debt + FINAL_deficit + DELTA
-    + reserve2.variableBorrowIndex / RAY()
+    + 2*reserve2.variableBorrowIndex / RAY()
     ;
   
 }

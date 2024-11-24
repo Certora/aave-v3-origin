@@ -7,6 +7,7 @@ import {PoolInstance} from '../../munged/src/contracts/instances/PoolInstance.so
 import {DataTypes} from '../../munged/src/contracts/protocol/libraries/types/DataTypes.sol';
 import {ReserveLogic} from '../../munged/src/contracts/protocol/libraries/logic/ReserveLogic.sol';
 import {WadRayMath} from '../../munged/src/contracts/protocol/libraries/math/WadRayMath.sol';
+import {LiquidationLogic} from '../../munged/src/contracts/protocol/libraries/logic/LiquidationLogic.sol';
 
 import {DummyContract} from "./DummyContract.sol";
 
@@ -48,4 +49,7 @@ contract PoolInstanceHarness is PoolInstance {
     return _reserves[asset];
   }
 
+  function _burnBadDebt_WRP(address user) external {
+    LiquidationLogic._burnBadDebt(_reserves, _reservesList, _usersConfig[user], _reservesCount, user); 
+  }
 }
