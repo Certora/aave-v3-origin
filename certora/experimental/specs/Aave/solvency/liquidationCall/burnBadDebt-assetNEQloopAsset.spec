@@ -11,7 +11,6 @@ import "../common/validation_functions.spec";
 persistent ghost address ATOKEN; persistent ghost address DEBT;
 
 persistent ghost address LOOP_ASSET;
-//persistent ghost address ASSET;
 
 persistent ghost mathint DELTA;
 

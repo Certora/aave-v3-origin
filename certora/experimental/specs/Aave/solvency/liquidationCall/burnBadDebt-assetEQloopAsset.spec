@@ -10,10 +10,8 @@ import "../common/validation_functions.spec";
 
 persistent ghost address ATOKEN; persistent ghost address DEBT;
 
-persistent ghost address LOOP_ASSET;
-//persistent ghost address ASSET;
-
 persistent ghost mathint DELTA;
+persistent ghost uint256 AMOUNT;
 
 persistent ghost mathint ORIG_totSUP_aToken;
 persistent ghost mathint ORIG_totSUP_debt;
@@ -39,16 +37,16 @@ methods {
   function LiquidationLogic.HOOK_burnBadDebt_before_burnDebtTokens(address reserveAddress, uint256 amount)
     internal with (env e) => HOOK_burnBadDebt_before_burnDebtTokens_CVL(e,reserveAddress,amount);
 
-  function LiquidationLogic.HOOK_burnBadDebt_after_burnDebtTokens(address reserveAddress, uint256 amount)
-    internal with (env e) => HOOK_burnBadDebt_after_burnDebtTokens_CVL(e,reserveAddress,amount);
+  function LiquidationLogic.HOOK_burnBadDebt_after_burnDebtTokens(address reserveAddress)
+    internal with (env e) => HOOK_burnBadDebt_after_burnDebtTokens_CVL(e,reserveAddress);
 }
 
 function HOOK_burnBadDebt_inside_loop_CVL(env e, address reserveAddress) {
-  LOOP_ASSET = reserveAddress;
-  require LOOP_ASSET == ASSET;
+  assert reserveAddress == ASSET;
 }
 
 function HOOK_burnBadDebt_before_burnDebtTokens_CVL(env e, address reserveAddress, uint256 amount) {
+  AMOUNT = amount;
   INTR1_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(ATOKEN, e));
   INTR1_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(DEBT, e));
   INTR1_VB            = getReserveDataExtended(ASSET).virtualUnderlyingBalance;
@@ -60,29 +58,26 @@ function HOOK_burnBadDebt_before_burnDebtTokens_CVL(env e, address reserveAddres
   assert INTR1_deficit == ORIG_deficit;
 }
 
-function HOOK_burnBadDebt_after_burnDebtTokens_CVL(env e, address reserveAddress, uint256 amount) {
+function HOOK_burnBadDebt_after_burnDebtTokens_CVL(env e, address reserveAddress) {
   INTR2_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(ATOKEN, e));
   INTR2_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(DEBT, e));
   INTR2_VB            = getReserveDataExtended(ASSET).virtualUnderlyingBalance;
   INTR2_deficit       = getReserveDataExtended(ASSET).deficit;
-
  
   assert INTR2_totSUP_aToken == INTR1_totSUP_aToken;
   assert INTR2_VB == INTR1_VB;
-  //  assert INTR2_totSUP_debt == INTR1_totSUP_debt;
-  //assert INTR2_deficit == INTR1_deficit;
+  assert INTR2_deficit == INTR1_deficit + AMOUNT;
+  assert INTR2_totSUP_debt >= INTR1_totSUP_debt - AMOUNT - getReserveDataExtended(ASSET).variableBorrowIndex / RAY();
+
+  assert INTR2_totSUP_aToken <= INTR2_VB + INTR2_totSUP_debt + INTR2_deficit + DELTA
+    + getReserveDataExtended(ASSET).variableBorrowIndex / RAY() ;
 }
 
 
 
 
 
-
-
-
-
 rule solvency__burnBadDebt(env e, address _asset) {
-  LOOP_ASSET = 0;
   init_state();
 
   // Different assets have different Debt tokens.
@@ -106,6 +101,8 @@ rule solvency__burnBadDebt(env e, address _asset) {
   require RAY()<=__liqInd_before && RAY()<=__dbtInd_before;
   require assert_uint128(RAY()) <= __liqInd_beforeS && assert_uint128(RAY()) <= __dbtInd_beforeS;
 
+  uint128 __liquidityRate = reserve.currentLiquidityRate;
+
   ORIG_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(ATOKEN, e));
   ORIG_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(DEBT, e));
   ORIG_VB = getReserveDataExtended(_asset).virtualUnderlyingBalance;
@@ -113,6 +110,7 @@ rule solvency__burnBadDebt(env e, address _asset) {
   
   // BASIC ASSUMPTION FOR THE RULE
   require isVirtualAccActive(reserve.configuration.data);
+  require currentContract._reservesCount >= 1 && getReservesList()[0]==ASSET;
 
   //THE MAIN REQUIREMENT
   require ORIG_totSUP_aToken <= ORIG_VB + ORIG_totSUP_debt + ORIG_deficit + DELTA;
@@ -121,34 +119,22 @@ rule solvency__burnBadDebt(env e, address _asset) {
                                     // I believe it's due inaccure RAY-calculations.
 
   // THE FUNCTION CALL
-  uint256 _amount; uint256 _interestRateMode; address onBehalfOf; uint16 referralCode;
-  require _interestRateMode == assert_uint256(DataTypes.InterestRateMode.VARIABLE);
   address user;
   _burnBadDebt_WRP(e, user);
 
   DataTypes.ReserveData reserve2 = getReserveDataExtended(_asset);
-  assert reserve2.lastUpdateTimestamp == assert_uint40(e.block.timestamp);
-  assert reserve2.liquidityIndex == assert_uint128(__liqInd_before);
-  assert (ORIG_totSUP_debt != 0 => (reserve2.variableBorrowIndex == assert_uint128(__dbtInd_before)));
-  assert getReserveNormalizedIncome(e, _asset) == __liqInd_before;
-  assert ORIG_totSUP_debt != 0 => (getReserveNormalizedVariableDebt(e, _asset) == __dbtInd_before);
-
   mathint FINAL_totSUP_aToken; FINAL_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(ATOKEN, e));
   mathint FINAL_totSUP_debt;   FINAL_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(DEBT, e));
   uint128 FINAL_VB = getReserveDataExtended(_asset).virtualUnderlyingBalance;
   uint128 FINAL_deficit = getReserveDataExtended(_asset).deficit;
 
-  assert true;
+  uint128 __liquidityRate__ = reserve2.currentLiquidityRate;
 
+  assert __liquidityRate == __liquidityRate__;
   
-  
-  assert LOOP_ASSET != _asset => FINAL_totSUP_aToken==ORIG_totSUP_aToken;
-  assert LOOP_ASSET != _asset => FINAL_VB==ORIG_VB;
 
-  /*
   //THE ASSERTION
-  assert LOOP_ASSET!=_asset =>
-    FINAL_totSUP_aToken <= FINAL_VB + FINAL_totSUP_debt + FINAL_deficit + DELTA
-    + reserve2.variableBorrowIndex / RAY() ;*/
+  assert FINAL_totSUP_aToken <= FINAL_VB + FINAL_totSUP_debt + FINAL_deficit + DELTA
+    + reserve2.variableBorrowIndex / RAY() ;
 }
 

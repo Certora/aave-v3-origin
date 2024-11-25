@@ -97,6 +97,11 @@ methods {
 function _burnBadDebt_CVL(env e) {
   INSIDE_liquidationCall = false;
 
+  //  ???
+  //  assert getReserveDataExtended(_COL_asset).lastUpdateTimestamp == e.block.timestamp;
+  //uint256 liq_index = getReserveDataExtended(_COL_asset).liquidityIndex;
+  //uint256 debt_index = getReserveDataExtended(_COL_asset).variableBorrowIndex;
+  
   mathint curr_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_COL_atoken, e));
   mathint curr_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(_COL_debt, e));
   uint128 curr_VB            = getReserveDataExtended(_COL_asset).virtualUnderlyingBalance;
@@ -115,11 +120,13 @@ function _burnBadDebt_CVL(env e) {
       _COL_liqIND / RAY() + _COL_dbtIND / RAY()
       ;
 
-    require
-      getReserveDataExtended(_COL_asset).variableBorrowIndex == getNormalizedDebt_CVL();
+    //require 
+      //getReserveDataExtended(_COL_asset).variableBorrowIndex == getNormalizedDebt_CVL();
+    // getReserveDataExtended(_COL_asset).variableBorrowIndex == debt_index;
 
-    require
-      getReserveDataExtended(_COL_asset).liquidityIndex == _COL_liqIND;
+    //require
+      //      getReserveDataExtended(_COL_asset).liquidityIndex == _COL_liqIND;
+      //getReserveDataExtended(_COL_asset).liquidityIndex == liq_index;
   }
   INSIDE_liquidationCall = true;
 }
@@ -336,12 +343,15 @@ rule solvency__liquidationCall_COLasset(env e) {
   assert FINAL_totSUP_debt == INTR_totSUP_debt;
   assert FINAL_deficit == INTR_deficit;
   assert FINAL_VB == INTR_VB;*/
+
+  //  uint256 __liqInd_before = getReserveNormalizedIncome(e, _asset);
+  //uint256 __dbtInd_before = getReserveNormalizedVariableDebt(e, _asset);
   
   //THE ASSERTION
   assert
     final_totSUP_aToken <= final_VB + final_totSUP_debt + final_deficit + DELTA
-    + reserve2.variableBorrowIndex / RAY()
-    + reserve2.liquidityIndex / RAY()
+    + getReserveNormalizedVariableDebt(e, _COL_asset) / RAY()
+    + getReserveNormalizedIncome(e, _COL_asset) / RAY()
     ;
 }
 

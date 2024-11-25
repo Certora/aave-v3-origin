@@ -5,7 +5,8 @@ methods {
 
   function getReserveDataExtended(address) external returns (DataTypes.ReserveData memory) envfree;
   function getReserveAddressById(uint16 id) external returns (address) envfree;
-
+  function getReservesList() external returns (address[]) envfree;
+    
   function rayMul(uint256,uint256) external returns (uint256) envfree;
   function rayDiv(uint256,uint256) external returns (uint256) envfree;
 }
