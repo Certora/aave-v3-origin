@@ -40,16 +40,6 @@ persistent ghost mathint INTR2_totSUP_debt;
 persistent ghost uint128 INTR2_VB;
 persistent ghost uint128 INTR2_deficit;
 
-persistent ghost mathint INTR3_totSUP_aToken;
-persistent ghost mathint INTR3_totSUP_debt;
-persistent ghost uint128 INTR3_VB;
-persistent ghost uint128 INTR3_deficit;
-
-persistent ghost mathint INTR4_totSUP_aToken;
-persistent ghost mathint INTR4_totSUP_debt;
-persistent ghost uint128 INTR4_VB;
-persistent ghost uint128 INTR4_deficit;
-
 persistent ghost mathint FINAL_totSUP_aToken;
 persistent ghost mathint FINAL_totSUP_debt;
 persistent ghost uint128 FINAL_VB;
@@ -57,14 +47,6 @@ persistent ghost uint128 FINAL_deficit;
 
 
 methods {
-  //function LiquidationLogic.DUMMY_vars_get_val1()
-  //  internal returns (uint256,uint256,uint256) => NONDET;
-  //function LiquidationLogic.DUMMY_vars_get_val2()
-  //  internal returns (uint256,uint256,uint256) => NONDET;
-  
-  //function LiquidationLogic.DUMMY_get_maxLiquidatableDebt()
-  //  internal returns (uint256) => NONDET;
-
   function IsolationModeLogic.updateIsolatedDebtIfIsolated(
     mapping(address => DataTypes.ReserveData) storage reservesData,
     mapping(uint256 => address) storage reservesList,
@@ -97,11 +79,6 @@ methods {
 function _burnBadDebt_CVL(env e) {
   INSIDE_liquidationCall = false;
 
-  //  ???
-  //  assert getReserveDataExtended(_COL_asset).lastUpdateTimestamp == e.block.timestamp;
-  //uint256 liq_index = getReserveDataExtended(_COL_asset).liquidityIndex;
-  //uint256 debt_index = getReserveDataExtended(_COL_asset).variableBorrowIndex;
-  
   mathint curr_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_COL_atoken, e));
   mathint curr_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(_COL_debt, e));
   uint128 curr_VB            = getReserveDataExtended(_COL_asset).virtualUnderlyingBalance;
@@ -119,14 +96,6 @@ function _burnBadDebt_CVL(env e) {
       after_VB + after_totSUP_debt + after_deficit + DELTA +
       _COL_liqIND / RAY() + _COL_dbtIND / RAY()
       ;
-
-    //require 
-      //getReserveDataExtended(_COL_asset).variableBorrowIndex == getNormalizedDebt_CVL();
-    // getReserveDataExtended(_COL_asset).variableBorrowIndex == debt_index;
-
-    //require
-      //      getReserveDataExtended(_COL_asset).liquidityIndex == _COL_liqIND;
-      //getReserveDataExtended(_COL_asset).liquidityIndex == liq_index;
   }
   INSIDE_liquidationCall = true;
 }
@@ -184,9 +153,7 @@ methods {
 
   function LiquidationLogic.HOOK_liquidation_after_burnBadDebt()
     internal with (env e) => HOOK_liquidation_after_burnBadDebt_CVL(e);
-
 }
-
 
 function HOOK_liquidation_before_burnCollateralATokens_CVL(env e, uint256 actualCollateralToLiquidate) {
   INSIDE_liquidationCall = false;
@@ -276,9 +243,14 @@ function HOOK_liquidation_after_burnBadDebt_CVL(env e) {
 function tokens_addresses_limitations_LQD(address asset, address atoken, address debt,
                                           address asset2, address atoken2, address debt2
                                          ) {
-  require asset==100;  require atoken==10;  require debt==11; 
-  require asset2==200; require atoken2==20; require debt2==21; 
+  //require asset==100;  require atoken==10;  require debt==11; 
+  //require asset2==200; require atoken2==20; require debt2==21; 
 
+  require _DBT_asset!=0;   require _COL_asset!=0;
+  
+  require _DBT_asset!=_COL_asset;
+  require _DBT_atoken != _COL_atoken;
+  require _DBT_debt != _COL_debt;
 }
 
 
@@ -337,16 +309,6 @@ rule solvency__liquidationCall_COLasset(env e) {
   uint128 final_VB = getReserveDataExtended(_COL_asset).virtualUnderlyingBalance;
   uint128 final_deficit = getReserveDataExtended(_COL_asset).deficit;
 
-  //  assert true;
-  /*
-  assert FINAL_totSUP_aToken == INTR_totSUP_aToken;
-  assert FINAL_totSUP_debt == INTR_totSUP_debt;
-  assert FINAL_deficit == INTR_deficit;
-  assert FINAL_VB == INTR_VB;*/
-
-  //  uint256 __liqInd_before = getReserveNormalizedIncome(e, _asset);
-  //uint256 __dbtInd_before = getReserveNormalizedVariableDebt(e, _asset);
-  
   //THE ASSERTION
   assert
     final_totSUP_aToken <= final_VB + final_totSUP_debt + final_deficit + DELTA

@@ -8,9 +8,13 @@ import "../common/functions.spec";
 import "../common/validation_functions.spec";
 
 
-persistent ghost address ATOKEN; persistent ghost address DEBT;
+/*================================================================================================
+  Rules in the file:
+  PASS: https://prover.certora.com/output/66114/cd7e0f9d2fc44e16a1f2c80918ec0fba/?anonymousKey=04d6f84469e7d81aea57a662f69e2f9bf8fae266
+  ================================================================================================*/
 
-persistent ghost address LOOP_ASSET;
+
+persistent ghost address ATOKEN; persistent ghost address DEBT;
 
 persistent ghost mathint DELTA;
 
@@ -38,13 +42,12 @@ methods {
   function LiquidationLogic.HOOK_burnBadDebt_before_burnDebtTokens(address reserveAddress, uint256 amount)
     internal with (env e) => HOOK_burnBadDebt_before_burnDebtTokens_CVL(e,reserveAddress,amount);
 
-  function LiquidationLogic.HOOK_burnBadDebt_after_burnDebtTokens(address reserveAddress, uint256 amount)
-    internal with (env e) => HOOK_burnBadDebt_after_burnDebtTokens_CVL(e,reserveAddress,amount);
+  function LiquidationLogic.HOOK_burnBadDebt_after_burnDebtTokens(address reserveAddress)
+    internal with (env e) => HOOK_burnBadDebt_after_burnDebtTokens_CVL(e,reserveAddress);
 }
 
 function HOOK_burnBadDebt_inside_loop_CVL(env e, address reserveAddress) {
-  LOOP_ASSET = reserveAddress;
-  require LOOP_ASSET != ASSET;
+  assert reserveAddress != ASSET;
 }
 
 function HOOK_burnBadDebt_before_burnDebtTokens_CVL(env e, address reserveAddress, uint256 amount) {
@@ -59,7 +62,7 @@ function HOOK_burnBadDebt_before_burnDebtTokens_CVL(env e, address reserveAddres
   assert INTR1_deficit == ORIG_deficit;
 }
 
-function HOOK_burnBadDebt_after_burnDebtTokens_CVL(env e, address reserveAddress, uint256 amount) {
+function HOOK_burnBadDebt_after_burnDebtTokens_CVL(env e, address reserveAddress) {
   INTR2_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(ATOKEN, e));
   INTR2_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(DEBT, e));
   INTR2_VB            = getReserveDataExtended(ASSET).virtualUnderlyingBalance;
@@ -72,22 +75,25 @@ function HOOK_burnBadDebt_after_burnDebtTokens_CVL(env e, address reserveAddress
 }
 
 
-
-
-
-rule solvency__burnBadDebt(env e, address _asset) {
-  LOOP_ASSET = 0;
+function configuration(address asset) {
   init_state();
 
   // Different assets have different Debt tokens.
   require forall address a1. forall address a2.
     a1!=a2 => currentContract._reserves[a1].variableDebtTokenAddress != currentContract._reserves[a2].variableDebtTokenAddress;
-  
-  ATOKEN = currentContract._reserves[_asset].aTokenAddress;
-  DEBT = currentContract._reserves[_asset].variableDebtTokenAddress;
-  tokens_addresses_limitations(ATOKEN,DEBT,_asset);
 
-  require aTokenToUnderlying[ATOKEN]==_asset; require aTokenToUnderlying[DEBT]==_asset;
+  ATOKEN = currentContract._reserves[asset].aTokenAddress;
+  DEBT = currentContract._reserves[asset].variableDebtTokenAddress;
+  tokens_addresses_limitations(ATOKEN,DEBT,asset); // this call makes (among other things ASSET==asset)
+
+  require aTokenToUnderlying[ATOKEN]==asset; require aTokenToUnderlying[DEBT]==asset;
+}
+
+
+
+
+rule solvency__burnBadDebt(env e, address _asset) {
+  configuration(_asset);
 
   DataTypes.ReserveData reserve = getReserveDataExtended(_asset);
   require reserve.lastUpdateTimestamp <= require_uint40(e.block.timestamp);
@@ -107,6 +113,9 @@ rule solvency__burnBadDebt(env e, address _asset) {
   
   // BASIC ASSUMPTION FOR THE RULE
   require isVirtualAccActive(reserve.configuration.data);
+  // We assume that the ASSET is NOT processed in the loop (of _burnBadDebt). The opposite is considered in the
+  // file burnBadDebt-assetINloop.spec
+  require currentContract._reservesCount < 1 || getReservesList()[0]!=ASSET;
 
   //THE MAIN REQUIREMENT
   require ORIG_totSUP_aToken <= ORIG_VB + ORIG_totSUP_debt + ORIG_deficit + DELTA;
@@ -115,11 +124,9 @@ rule solvency__burnBadDebt(env e, address _asset) {
                                        // I believe it's due inaccure RAY-calculations.
 
   // THE FUNCTION CALL
-  address user;
-  _burnBadDebt_WRP(e, user);
+  address user;  _burnBadDebt_WRP(e, user);
 
   DataTypes.ReserveData reserve2 = getReserveDataExtended(_asset);
-
   mathint FINAL_totSUP_aToken; FINAL_totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(ATOKEN, e));
   mathint FINAL_totSUP_debt;   FINAL_totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(DEBT, e));
   uint128 FINAL_VB = getReserveDataExtended(_asset).virtualUnderlyingBalance;
@@ -133,6 +140,6 @@ rule solvency__burnBadDebt(env e, address _asset) {
   //THE ASSERTION
   assert
     FINAL_totSUP_aToken <= FINAL_VB + FINAL_totSUP_debt + FINAL_deficit + DELTA
-    + reserve2.variableBorrowIndex / RAY() ;
+    + getReserveNormalizedVariableDebt(e, ASSET) / RAY();
 }
 

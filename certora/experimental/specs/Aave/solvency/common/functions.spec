@@ -32,16 +32,16 @@ function init_state() {
 }
 
 function tokens_addresses_limitations(address atoken, address variable, address asset) {
-  require atoken==10; require variable==11; require asset==100;
+  //  require atoken==10; require variable==11; require asset==100;
   //  require weth!=10 && weth!=11 && weth!=12;
 
-  /*  require asset != 0;
+  require asset != 0;
   require atoken != variable && atoken != asset;
-  require variable != asset;*/
+  require variable != asset;
   //  require weth != atoken && weth != variable && atoken != stb;
 
-  // The asset that current rule deals with. It is used in summarization CVL-functions,
-  // see for example _accrueToTreasuryCVL().
+  // The asset that current rule deals with. It is used in summarization CVL-functions, and other places.
+  // See for example _accrueToTreasuryCVL().
   ASSET = asset;
 }
 
