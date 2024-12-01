@@ -1,7 +1,7 @@
 
 // aave imports
-import "../../aToken.spec";
-import "../../AddressProvider.spec";
+import "../AUX/CVLMocks/aToken.spec";
+import "../AUX/CVLMocks/AddressProvider.spec";
 
 import "../common/optimizations.spec";
 import "../common/functions.spec";
