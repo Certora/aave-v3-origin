@@ -64,7 +64,7 @@ function approveCVL(address token, address approver, address spender, uint256 am
     allowanceByToken[token][approver][spender] = amount;
     return true;
 }
-/*
+
 function transferFromCVL(address token, address spender, address from, address to, uint256 amount) returns bool {
     if (allowanceByToken[token][from][spender] < amount) return false;
     allowanceByToken[token][from][spender] = assert_uint256(allowanceByToken[token][from][spender] - amount);
@@ -78,7 +78,7 @@ function transferCVL(address token, address from, address to, uint256 amount) re
     balanceByToken[token][to] = require_uint256(balanceByToken[token][to] + amount);  // We neglect overflows.
     return true;
 }
-*/
+
 function increaseAllowanceCVL(address token, address owner, address spender, uint256 increasedAmount) returns bool {
     uint256 amt = require_uint256(allowanceCVL(token, owner, spender) + increasedAmount);
     return approveCVL(token, owner, spender, amt);
