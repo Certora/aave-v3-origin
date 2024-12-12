@@ -40,6 +40,27 @@ methods {
 }
 
 
+// For flashloan
+methods {
+    function _.executeOperation(
+        address[] assets,
+        uint256[] amounts,
+        uint256[] premiums,
+        address initiator,
+        bytes params
+    ) external => NONDET; // expect bool;
+
+    // simple receiver
+    function _.executeOperation(
+        address asset,
+        uint256 amount,
+        uint256 premium,
+        address initiator,
+        bytes params
+    ) external => NONDET; // expect bool;
+}
+
+
 
 
 function init_state() {
@@ -82,29 +103,19 @@ rule stableFieldsUntouched(method f, env e, address _asset)
     aTokenToUnderlying[currentContract._reserves[asset].aTokenAddress]==asset
     &&
     aTokenToUnderlying[currentContract._reserves[asset].variableDebtTokenAddress]==asset;
+
   
-  //DataTypes.ReserveData reserve = getReserveDataExtended(_asset);
   DataTypes.ReserveDataLegacy reserveLegasy = getReserveData(_asset);
 
-  //uint128 __deprecatedStableBorrowRate_BEFORE = reserve.__deprecatedStableBorrowRate;
-  //address __deprecatedStableDebtTokenAddress_BEFORE = reserve.__deprecatedStableDebtTokenAddress;
   uint128 currentStableBorrowRate_BEFORE = reserveLegasy.currentStableBorrowRate;
-  //  address stableDebtTokenAddress_BEFORE = reserveLegasy.stableDebtTokenAddress;
   
   calldataarg args;
   f(e,args);
   
-  //  DataTypes.ReserveData reserve2 = getReserveDataExtended(_asset);
   DataTypes.ReserveDataLegacy reserveLegasy2 = getReserveData(_asset);
 
-  //uint128 __deprecatedStableBorrowRate_AFTER = reserve2.__deprecatedStableBorrowRate;
-  //address __deprecatedStableDebtTokenAddress_AFTER = reserve2.__deprecatedStableDebtTokenAddress;
   uint128 currentStableBorrowRate_AFTER = reserveLegasy2.currentStableBorrowRate;
   address stableDebtTokenAddress_AFTER = reserveLegasy2.stableDebtTokenAddress;
 
-  //  assert __deprecatedStableBorrowRate_BEFORE == __deprecatedStableBorrowRate_AFTER;
-  //assert __deprecatedStableDebtTokenAddress_BEFORE == __deprecatedStableDebtTokenAddress_AFTER;
   assert currentStableBorrowRate_BEFORE == currentStableBorrowRate_AFTER;
-  //  assert stableDebtTokenAddress_BEFORE == stableDebtTokenAddress_AFTER;
-         
 }
