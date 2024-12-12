@@ -16,8 +16,8 @@ contract StataTokenV2GettersTest is BaseTest {
   }
 
   function test_getters() public view {
-    assertEq(stataTokenV2.name(), 'Static Aave Local WETH v2');
-    assertEq(stataTokenV2.symbol(), 'stataLocWETHv2');
+    assertEq(stataTokenV2.name(), 'Wrapped Aave Local WETH');
+    assertEq(stataTokenV2.symbol(), 'waLocWETH');
 
     address referenceAsset = stataTokenV2.getReferenceAsset();
     assertEq(referenceAsset, aToken);
@@ -25,8 +25,7 @@ contract StataTokenV2GettersTest is BaseTest {
     address underlyingAddress = address(stataTokenV2.asset());
     assertEq(underlyingAddress, underlying);
 
-    DataTypes.ReserveDataLegacy memory data = contracts.poolProxy.getReserveData(underlyingAddress);
-    assertEq(stataTokenV2.aToken(), data.aTokenAddress);
+    assertEq(stataTokenV2.aToken(), contracts.poolProxy.getReserveAToken(underlyingAddress));
 
     IERC20Metadata underlying = IERC20Metadata(underlyingAddress);
     assertEq(stataTokenV2.decimals(), underlying.decimals());

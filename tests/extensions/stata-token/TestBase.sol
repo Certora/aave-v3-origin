@@ -40,13 +40,10 @@ abstract contract BaseTest is TestnetProcedures {
     spender = vm.addr(spenderPrivateKey);
 
     initTestEnvironment(false);
-    DataTypes.ReserveDataLegacy memory reserveDataWETH = contracts.poolProxy.getReserveData(
-      tokenList.weth
-    );
 
     underlying = address(weth);
     rewardToken = address(new TestnetERC20('LM Reward ERC20', 'RWD', 18, OWNER));
-    aToken = reserveDataWETH.aTokenAddress;
+    aToken = contracts.poolProxy.getReserveAToken(tokenList.weth);
 
     rewardTokens.push(rewardToken);
 
@@ -62,14 +59,6 @@ abstract contract BaseTest is TestnetProcedures {
   function _skipBlocks(uint128 blocks) internal {
     vm.roll(block.number + blocks);
     vm.warp(block.timestamp + blocks * 12); // assuming a block is around 12seconds
-  }
-
-  function testAdmin() public {
-    vm.stopPrank();
-    vm.startPrank(proxyAdmin);
-    assertEq(TransparentUpgradeableProxy(payable(address(stataTokenV2))).admin(), proxyAdmin);
-    assertEq(TransparentUpgradeableProxy(payable(address(factory))).admin(), proxyAdmin);
-    vm.stopPrank();
   }
 
   function _fundUnderlying(uint256 assets, address receiver) internal {
