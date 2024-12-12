@@ -1,0 +1,569 @@
+import "../../ERC20/WETHcvl.spec";
+import "../../ERC721/erc721.spec";
+import "../../ERC1967/erc1967.spec";
+import "../../PriceAggregators/chainlink.spec";
+import "../../PriceAggregators/tellor.spec";
+
+// aave imports
+import "../aToken.spec";
+import "../AddressProvider.spec";
+import "../PriceOracleSentinel.spec";
+import "../PriceOracle.spec";
+import "../ACLManager.spec";
+import "../FlashLoanReceiver.spec";
+
+// standard
+import "../../problems.spec";
+import "../../unresolved.spec";
+import "../../optimizations.spec";
+
+import "../../generic.spec"; // pick additional rules from here
+
+
+/*================================================================================================
+  The property that we prove in this file (and also all the files solvency_...) is the following 
+  solvency invariant (for an arbitrary asset):
+                  (*)  Atoken.totalSupply() <= VariableDebtToken.totalSupply() + virtual_balance
+  Intuitively, the left hand side is the amount the the pool owes to its users, and the right hand 
+  side is the amount it has (either in hands - the virtual_balance, or what people owe to it - 
+  the VariableDebtToken.totalSupply()) (*) should be proved for the following case:
+  1. A function call: for example supply, withdraw, borrow, repay, repayWithATokens ...
+  2. Time passing (without any function being called). This is relevant because the indexes increase 
+     with the time, hence the amounts that appear in (*)
+
+  Note that:
+  1. The above isn't a real invariant. It can be violated due to rounding errors. What we really prove
+     is that the left-hand-side minus right-hand-side of (*) can't increase by more than the index 
+     (in RAY units) after each function call. (it is either the liquidity-index or the variableBorrow-index
+     depending on the specific function call.
+  2. The above is proved under the following assumptions:
+     a. The pool uses virtual accounting for the asset.
+     b. The asset uses only variable-debt interest (and not stable-debt). Moreover we assume that 
+        StableDebtToken.totalSupply()==0. (Aave is going in that direction.)
+     c. RAY <= liquidity-index  &&  RAY <= borrow-index. (this should be easy to prove)
+     d. Atoken.totalSupply() <= RAY. If this assumption is removed, we either get a timeout or an error. 
+        (I suspect that the error is due to an imprecision RAY-calculation with such big numbers,  but 
+        haven't checked it yet.)
+  ================================================================================================*/
+
+
+
+methods {
+  function _.ADDRESSES_PROVIDER() external => NONDET; // expect address
+  function _.calculateInterestRates(DataTypes.CalculateInterestRatesParams params) external => NONDET;
+
+  function getReserveDataExtended(address) external returns (DataTypes.ReserveData memory) envfree;
+}
+
+
+function isVirtualAccActive(uint256 data) returns bool {
+    uint mask = 0xEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
+    return (data & ~mask) != 0;
+}
+
+
+function init_state() {
+    // based on aTokensAreNotUnderlyings
+    require forall address a. 
+        a == 0 // nothing-token
+        || aTokenToUnderlying[a] == 0 // underlying
+        || aTokenToUnderlying[aTokenToUnderlying[a]] == 0 // aTokens map to underlyings which map to 0
+    ;
+    // aTokens have the AToken sort, VariableDebtTokens have the VariableDebt sort, etc...
+    require forall address a. tokenToSort[currentContract._reserves[a].aTokenAddress] == AToken_token();
+    require forall address a. tokenToSort[currentContract._reserves[a].variableDebtTokenAddress] == VariableDebtToken_token();
+    require forall address a. tokenToSort[currentContract._reserves[a].stableDebtTokenAddress] == StableDebtToken_token();
+}
+
+
+function tokens_addresses_limitations(address atoken, address variable, address stb, address asset) {
+  //require atoken==10; require variable==11; require stb==12; require asset==100;
+  //require weth!=10 && weth!=11 && weth!=12;
+
+  require asset != 0;
+  require atoken != variable && atoken != stb && atoken != asset;
+  require variable != stb && variable != asset;
+  require stb != asset;
+  require weth != atoken && weth != variable && atoken != stb;
+
+  // The asset that current rule deals with. It is used in summarization CVL-functions,
+  // see for example _accrueToTreasuryCVL().
+  ASSET = asset;
+}
+
+
+
+/*=====================================================================================
+  Rule: same_index__borrow
+  =====================================================================================*/
+rule same_index__borrow(env e, address _asset) {
+  init_state();
+
+  address _atoken = currentContract._reserves[_asset].aTokenAddress;
+  address _debt = currentContract._reserves[_asset].variableDebtTokenAddress;
+  address _stb = currentContract._reserves[_asset].stableDebtTokenAddress;
+  tokens_addresses_limitations(_atoken,_debt,_stb,_asset);
+
+  require aTokenToUnderlying[_atoken]==_asset; require aTokenToUnderlying[_debt]==_asset; require aTokenToUnderlying[_stb]==_asset;
+
+  DataTypes.ReserveData reserve = getReserveDataExtended(_asset);
+  require reserve.lastUpdateTimestamp <= require_uint40(e.block.timestamp);
+
+  // INDEXES REQUIREMENTS
+  uint128 __liqInd_beforeS = reserve.liquidityIndex;
+  uint128 __dbtInd_beforeS = reserve.variableBorrowIndex;
+  uint256 __liqInd_before = getNormalizedIncome(e, _asset);
+  uint256 __dbtInd_before = getNormalizedDebt(e, _asset);
+  require RAY()<=__liqInd_before && RAY()<=__dbtInd_before;
+  require assert_uint128(RAY()) <= __liqInd_beforeS && assert_uint128(RAY()) <= __dbtInd_beforeS;
+
+  //  mathint __totSUP_aToken; __totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_atoken, e));
+  //mathint __totSUP_debt;   __totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(_debt, e));
+  //uint128 __virtual_bal = getReserveDataExtended(_asset).virtualUnderlyingBalance;
+
+  // BASIC ASSUMPTION FOR THE RULE
+  require scaledTotalSupplyCVL(_stb)==0;
+  require isVirtualAccActive(reserve.configuration.data);
+
+  //THE MAIN REQUIREMENT
+  //uint256 CONST;
+  //require to_mathint(__totSUP_aToken) <= __virtual_bal + __totSUP_debt + CONST;
+  
+  //require __totSUP_aToken <= 10^27; // Without this requirement we get a failure.
+                                    // I believe it's due inaccure RAY-calculations.
+
+  bool exists_debt = scaledTotalSupplyCVL(_debt)!=0;
+  
+  // THE FUNCTION CALL
+  uint256 _amount; uint256 _interestRateMode; address onBehalfOf; uint16 referralCode;
+  require _interestRateMode == assert_uint256(DataTypes.InterestRateMode.VARIABLE);
+  borrow(e, _asset, _amount, _interestRateMode, referralCode, onBehalfOf);
+
+  DataTypes.ReserveData reserve2 = getReserveDataExtended(_asset);
+  uint128 __liqInd_afterS = reserve2.liquidityIndex;
+  uint128 __dbtInd_afterS = reserve2.variableBorrowIndex;
+  uint256 __liqInd_after = getNormalizedIncome(e, _asset);
+  uint256 __dbtInd_after = getNormalizedDebt(e, _asset);
+
+  assert reserve2.lastUpdateTimestamp == assert_uint40(e.block.timestamp);
+
+  assert __liqInd_after  == __liqInd_before;
+  assert assert_uint256(__liqInd_afterS) == __liqInd_after;
+
+  assert exists_debt  =>  __dbtInd_after  == __dbtInd_before;
+  assert exists_debt  =>  assert_uint256(__dbtInd_afterS) == __dbtInd_after;
+
+}
+
+
+
+/*=====================================================================================
+  Rule: solvency__supply
+  =====================================================================================*/
+rule solvency__supply(env e, address _asset) {
+  init_state();
+
+  address _atoken = currentContract._reserves[_asset].aTokenAddress;
+  address _debt = currentContract._reserves[_asset].variableDebtTokenAddress;
+  address _stb = currentContract._reserves[_asset].stableDebtTokenAddress;
+  tokens_addresses_limitations(_atoken,_debt,_stb,_asset);
+
+  require aTokenToUnderlying[_atoken]==_asset; require aTokenToUnderlying[_debt]==_asset; require aTokenToUnderlying[_stb]==_asset;
+
+  DataTypes.ReserveData reserve = getReserveDataExtended(_asset);
+  require reserve.lastUpdateTimestamp <= require_uint40(e.block.timestamp);
+
+  // INDEXES REQUIREMENTS
+  //  uint256 __liqInd_before = getReserveNormalizedIncome(e, _asset);
+  //uint256 __dbtInd_before = getReserveNormalizedVariableDebt(e, _asset);
+  //require RAY()  <= __liqInd_before    && RAY()    <= __dbtInd_before   ;
+
+
+
+
+  mathint __totSUP_aToken; __totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_atoken, e));
+  mathint __totSUP_debt;   __totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(_debt, e));
+  uint128 __virtual_bal = getReserveDataExtended(_asset).virtualUnderlyingBalance;
+
+  // BASIC ASSUMPTION FOR THE RULE
+  require scaledTotalSupplyCVL(_stb)==0;
+  require isVirtualAccActive(reserve.configuration.data);
+
+  // THE MAIN REQUIREMENT
+  uint256 CONST;
+  require to_mathint(__totSUP_aToken) <= __virtual_bal + __totSUP_debt + CONST;
+
+  require __totSUP_aToken <= 10^27; // Without this requirement we get  timeout/error
+                                    // I believe it's due inaccure RAY-calculations.
+
+  // THE FUNCTION CALL
+  uint256 _amount; address onBehalfOf; uint16 referralCode;
+  supply(e, _asset, _amount, onBehalfOf, referralCode);
+
+  DataTypes.ReserveData reserve2 = getReserveDataExtended(_asset);
+  assert reserve2.lastUpdateTimestamp == assert_uint40(e.block.timestamp);
+  //require assert_uint256(reserve2.liquidityIndex) == LIQUIDITY_INDEX;
+  //require assert_uint256(reserve2.variableBorrowIndex) == DEBT_INDEX;
+  //  assert reserve2.liquidityIndex == assert_uint128(__liqInd_before);
+  //assert __totSUP_debt != 0 => (reserve2.variableBorrowIndex == assert_uint128(__dbtInd_before));
+  //assert getReserveNormalizedIncome(e, _asset) == __liqInd_before;
+  //assert __totSUP_debt != 0 => (getReserveNormalizedVariableDebt(e, _asset) == __dbtInd_before);
+  
+  mathint __totSUP_aToken__; __totSUP_aToken__ = to_mathint(aTokenTotalSupplyCVL(_atoken, e));
+  mathint __totSUP_debt__;   __totSUP_debt__   = to_mathint(aTokenTotalSupplyCVL(_debt, e));
+  uint128 __virtual_bal__ = getReserveDataExtended(_asset).virtualUnderlyingBalance;
+  
+  //THE ASSERTION
+  assert to_mathint(__totSUP_aToken__) <= __virtual_bal__ + __totSUP_debt__ + CONST
+    + reserve2.liquidityIndex/RAY();
+}
+
+
+
+
+/*=====================================================================================
+  Rule: solvency__withdraw
+  =====================================================================================*/
+rule solvency__withdraw(env e, address _asset) {
+  init_state();
+
+  address _atoken = currentContract._reserves[_asset].aTokenAddress;
+  address _debt = currentContract._reserves[_asset].variableDebtTokenAddress;
+  address _stb = currentContract._reserves[_asset].stableDebtTokenAddress;
+  tokens_addresses_limitations(_atoken,_debt,_stb,_asset);
+
+  require aTokenToUnderlying[_atoken]==_asset; require aTokenToUnderlying[_debt]==_asset; require aTokenToUnderlying[_stb]==_asset;
+
+  DataTypes.ReserveData reserve = getReserveDataExtended(_asset);
+  require reserve.lastUpdateTimestamp <= require_uint40(e.block.timestamp);
+
+  // INDEXES REQUIREMENTS
+  uint256 __liqInd_before = getReserveNormalizedIncome(e, _asset);
+  uint256 __dbtInd_before = getReserveNormalizedVariableDebt(e, _asset);
+  uint128 __liqInd_beforeS = reserve.liquidityIndex;
+  uint128 __dbtInd_beforeS = reserve.variableBorrowIndex;
+  require RAY()<=__liqInd_before && RAY()<=__dbtInd_before;
+  require assert_uint128(RAY()) <= __liqInd_beforeS && assert_uint128(RAY()) <= __dbtInd_beforeS;
+
+  mathint __totSUP_aToken; __totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_atoken, e));
+  mathint __totSUP_debt;   __totSUP_debt   = to_mathint(aTokenTotalSupplyCVL(_debt, e));
+  uint128 __virtual_bal = getReserveDataExtended(_asset).virtualUnderlyingBalance;
+
+  // BASIC ASSUMPTION FOR THE RULE
+  require scaledTotalSupplyCVL(_stb)==0;
+  require isVirtualAccActive(reserve.configuration.data);
+
+  // THE MAIN REQUIREMENT
+  uint256 CONST;
+  require to_mathint(__totSUP_aToken) <= __virtual_bal + __totSUP_debt + CONST;
+  
+  require __totSUP_aToken <= 10^27; // Without this requirement we get a timeout
+                                    // I believe it's due inaccure RAY-calculations.
+
+  // THE FUNCTION CALL
+  uint256 _amount; address _to;
+  withdraw(e, _asset, _amount, _to);
+
+  DataTypes.ReserveData reserve2 = getReserveDataExtended(_asset);
+  assert reserve2.lastUpdateTimestamp == assert_uint40(e.block.timestamp);
+  assert reserve2.liquidityIndex == assert_uint128(__liqInd_before);
+  assert __totSUP_debt != 0 => (reserve2.variableBorrowIndex == assert_uint128(__dbtInd_before));
+  assert getReserveNormalizedIncome(e, _asset) == __liqInd_before;
+  assert __totSUP_debt != 0 => (getReserveNormalizedVariableDebt(e, _asset) == __dbtInd_before);
+  
+  mathint __totSUP_aToken__; __totSUP_aToken__ = to_mathint(aTokenTotalSupplyCVL(_atoken, e));
+  mathint __totSUP_debt__;   __totSUP_debt__   = to_mathint(aTokenTotalSupplyCVL(_debt, e));
+  uint128 __virtual_bal__ = getReserveDataExtended(_asset).virtualUnderlyingBalance;
+  
+  //THE ASSERTION
+  assert __totSUP_aToken__ <= __virtual_bal__ + __totSUP_debt__ + CONST
+         + reserve2.liquidityIndex / RAY();
+}
+
+
+
+/*=====================================================================================
+  Rule: same_indexes__repay
+  =====================================================================================*/
+rule same_indexes__repay(env e, address _asset) {
+  init_state();
+
+  address _atoken = currentContract._reserves[_asset].aTokenAddress;
+  address _debt = currentContract._reserves[_asset].variableDebtTokenAddress;
+  address _stb = currentContract._reserves[_asset].stableDebtTokenAddress;
+  tokens_addresses_limitations(_atoken,_debt,_stb,_asset);
+
+  require aTokenToUnderlying[_atoken]==_asset; require aTokenToUnderlying[_debt]==_asset; require aTokenToUnderlying[_stb]==_asset;
+
+  DataTypes.ReserveData reserve = getReserveDataExtended(_asset);
+  require reserve.lastUpdateTimestamp <= require_uint40(e.block.timestamp);
+
+  // INDEXES REQUIREMENTS
+  uint256 __liqInd_before = getReserveNormalizedIncome(e, _asset);
+  uint256 __dbtInd_before = getReserveNormalizedVariableDebt(e, _asset);
+  uint128 __liqInd_beforeS = reserve.liquidityIndex;
+  uint128 __dbtInd_beforeS = reserve.variableBorrowIndex;
+  require RAY()<=__liqInd_before && RAY()<=__dbtInd_before;
+  require assert_uint128(RAY()) <= __liqInd_beforeS && assert_uint128(RAY()) <= __dbtInd_beforeS;
+  
+  //mathint __totSUP_aToken; __totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_atoken, e));
+  //mathint __totSUP_debt;  __totSUP_debt = to_mathint(aTokenTotalSupplyCVL(_debt, e));
+  //uint128 __virtual_bal = getReserveDataExtended(_asset).virtualUnderlyingBalance;
+
+  // BASIC ASSUMPTION FOR THE RULE
+  require scaledTotalSupplyCVL(_stb)==0;
+  require isVirtualAccActive(reserve.configuration.data);
+
+  // THE MAIN REQUIREMENT
+  //uint256 CONST;
+  //require to_mathint(__totSUP_aToken) <= __virtual_bal + __totSUP_debt + CONST;
+
+  //require __totSUP_aToken <= 10^27; // Without this requirement we get a timeout
+                                    // I believe it's due inaccure RAY-calculations.
+
+  bool exists_debt = scaledTotalSupplyCVL(_debt)!=0;
+  require exists_debt;
+
+  // THE FUNCTION CALL
+  uint256 _amount; uint256 interestRateMode; address onBehalfOf; uint16 referralCode;
+  require interestRateMode == assert_uint256(DataTypes.InterestRateMode.VARIABLE);
+  repay(e, _asset, _amount, interestRateMode, onBehalfOf);
+
+  DataTypes.ReserveData reserve2 = getReserveDataExtended(_asset);
+  uint128 __liqInd_afterS = reserve2.liquidityIndex;
+  uint128 __dbtInd_afterS = reserve2.variableBorrowIndex;
+  uint256 __liqInd_after = getNormalizedIncome(e, _asset);
+  uint256 __dbtInd_after = getNormalizedDebt(e, _asset);
+
+  assert reserve2.lastUpdateTimestamp == assert_uint40(e.block.timestamp);
+
+  assert __liqInd_after  == __liqInd_before;
+  assert assert_uint256(__liqInd_afterS) == __liqInd_after;
+
+  assert __dbtInd_after  == __dbtInd_before;
+  assert assert_uint256(__dbtInd_afterS) == __dbtInd_after;
+}
+
+
+
+/*=====================================================================================
+  Rule: solvency__repayWithATokens
+  =====================================================================================*/
+rule solvency__repayWithATokens(env e, address _asset) {
+  init_state();
+
+  address _atoken = currentContract._reserves[_asset].aTokenAddress;
+  address _debt = currentContract._reserves[_asset].variableDebtTokenAddress;
+  address _stb = currentContract._reserves[_asset].stableDebtTokenAddress;
+  tokens_addresses_limitations(_atoken,_debt,_stb,_asset);
+
+  require aTokenToUnderlying[_atoken]==_asset; require aTokenToUnderlying[_debt]==_asset; require aTokenToUnderlying[_stb]==_asset;
+
+  DataTypes.ReserveData reserve = getReserveDataExtended(_asset);
+  require reserve.lastUpdateTimestamp <= require_uint40(e.block.timestamp);
+
+  // INDEXES REQUIREMENTS
+  uint256 __liqInd_before = getReserveNormalizedIncome(e, _asset);
+  uint256 __dbtInd_before = getReserveNormalizedVariableDebt(e, _asset);
+  uint128 __liqInd_beforeS = reserve.liquidityIndex;
+  uint128 __dbtInd_beforeS = reserve.variableBorrowIndex;
+  require RAY()<=__liqInd_before && RAY()<=__dbtInd_before;
+  require assert_uint128(RAY()) <= __liqInd_beforeS && assert_uint128(RAY()) <= __dbtInd_beforeS;
+  
+  mathint __totSUP_aToken; __totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_atoken, e));
+  mathint __totSUP_debt;  __totSUP_debt = to_mathint(aTokenTotalSupplyCVL(_debt, e));
+  uint128 __virtual_bal = getReserveDataExtended(_asset).virtualUnderlyingBalance;
+
+  // BASIC ASSUMPTION FOR THE RULE
+  require scaledTotalSupplyCVL(_stb)==0;
+  require isVirtualAccActive(reserve.configuration.data);
+
+  // THE MAIN REQUIREMENT
+  uint256 CONST;
+  require to_mathint(__totSUP_aToken) <= __virtual_bal + __totSUP_debt + CONST;
+
+  require __totSUP_aToken <= 10^27; // Without this requirement we get a timeout
+                                    // I believe it's due inaccure RAY-calculations.
+
+  // THE FUNCTION CALL
+  uint256 _amount; uint256 interestRateMode; address onBehalfOf; uint16 referralCode;
+  require interestRateMode == assert_uint256(DataTypes.InterestRateMode.VARIABLE);
+  repayWithATokens(e, _asset, _amount, interestRateMode);
+
+  DataTypes.ReserveData reserve2 = getReserveDataExtended(_asset);
+  assert reserve2.lastUpdateTimestamp == assert_uint40(e.block.timestamp);
+  assert reserve2.liquidityIndex == assert_uint128(__liqInd_before);
+  assert __totSUP_debt != 0 => (reserve2.variableBorrowIndex == assert_uint128(__dbtInd_before));
+  assert getReserveNormalizedIncome(e, _asset) == __liqInd_before;
+  assert __totSUP_debt != 0 => (getReserveNormalizedVariableDebt(e, _asset) == __dbtInd_before);
+  
+  mathint __totSUP_aToken__; __totSUP_aToken__ = to_mathint(aTokenTotalSupplyCVL(_atoken, e));
+  mathint __totSUP_debt__;   __totSUP_debt__   = to_mathint(aTokenTotalSupplyCVL(_debt, e));
+  uint128 __virtual_bal__ = getReserveDataExtended(_asset).virtualUnderlyingBalance;
+  
+  //THE ASSERTION
+  assert to_mathint(__totSUP_aToken__) <= __virtual_bal__ + __totSUP_debt__ + CONST
+    + reserve2.variableBorrowIndex / RAY() ;
+}
+
+
+
+
+
+function is_borrow(method f) returns bool {
+  return
+    f.selector == sig:borrow(address,uint256,uint256,uint16,address).selector;
+}
+function is_repay(method f) returns bool {
+  return f.selector == sig:repay(address,uint256,uint256,address).selector;
+}
+function is_repayWithATokens(method f) returns bool {
+  return f.selector == sig:repayWithATokens(address,uint256,uint256).selector;
+}
+
+
+definition method_can_be_called_by_a_user(method f) returns bool =
+  f.selector == sig:supply(address,uint256,address,uint16).selector
+  || f.selector == sig:withdraw(address,uint256,address).selector
+  || f.selector == sig:borrow(address,uint256,uint256,uint16,address).selector
+  || f.selector == sig:repay(address,uint256,uint256,address).selector
+  || f.selector == sig:repayWithATokens(address,uint256,uint256).selector
+
+  ;
+
+/*=====================================================================================
+  Rule: solvency__all
+  =====================================================================================*/
+rule solvency__all(env e, address _asset, method f) filtered
+{f -> method_can_be_called_by_a_user(f)} {
+  init_state();
+
+  address _atoken = currentContract._reserves[_asset].aTokenAddress;
+  address _debt = currentContract._reserves[_asset].variableDebtTokenAddress;
+  address _stb = currentContract._reserves[_asset].stableDebtTokenAddress;
+  tokens_addresses_limitations(_atoken,_debt,_stb,_asset);
+
+  require aTokenToUnderlying[_atoken]==_asset; require aTokenToUnderlying[_debt]==_asset; require aTokenToUnderlying[_stb]==_asset;
+
+  DataTypes.ReserveData reserve = getReserveDataExtended(_asset);
+  require reserve.lastUpdateTimestamp <= require_uint40(e.block.timestamp);
+
+  // INDEXES REQUIREMENTS
+  uint128 __liqInd_beforeS = reserve.liquidityIndex;
+  uint128 __dbtInd_beforeS = reserve.variableBorrowIndex;
+  uint256 __liqInd_before = getReserveNormalizedIncome(e, _asset);
+  uint256 __dbtInd_before = getReserveNormalizedVariableDebt(e, _asset);
+
+  require RAY()<=__liqInd_before && RAY()<=__dbtInd_before;
+  require assert_uint128(RAY()) <= __liqInd_beforeS && assert_uint128(RAY()) <= __dbtInd_beforeS;
+
+  mathint __totSUP_aToken; __totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_atoken, e));
+  mathint __totSUP_debt;  __totSUP_debt = to_mathint(aTokenTotalSupplyCVL(_debt, e));
+  uint128 __virtual_bal = getReserveDataExtended(_asset).virtualUnderlyingBalance;
+
+  // BASIC ASSUMPTION FOR THE RULE
+  require scaledTotalSupplyCVL(_stb)==0;
+  require isVirtualAccActive(reserve.configuration.data);
+
+  // THE MAIN REQUIREMENT
+  uint256 CONST;
+  require to_mathint(__totSUP_aToken) <= __virtual_bal + __totSUP_debt + CONST;
+
+  require __totSUP_aToken <= 10^27; // Without this requirement we get  timeout/error
+
+  // THE FUNCTION CALL
+  uint256 _amount; uint256 interestRateMode; address onBehalfOf; uint16 referralCode; address _to;
+  require interestRateMode == assert_uint256(DataTypes.InterestRateMode.VARIABLE);
+  calldataarg args;
+  if (is_borrow(f))
+    borrow(e, _asset, _amount, interestRateMode, referralCode, onBehalfOf);
+  else if (is_repay(f))
+    repay(e, _asset, _amount, interestRateMode, onBehalfOf);
+  else if (is_repayWithATokens(f))
+    repayWithATokens(e, _asset, _amount, interestRateMode);
+  else if (f.selector == sig:supply(address,uint256,address,uint16).selector)
+    supply(e, _asset, _amount, onBehalfOf, referralCode);
+  else if (f.selector == sig:withdraw(address,uint256,address).selector)
+    withdraw(e, _asset, _amount, _to);
+  else
+    assert false;
+  
+  DataTypes.ReserveData reserve2 = getReserveDataExtended(_asset);
+  assert reserve2.lastUpdateTimestamp == assert_uint40(e.block.timestamp);
+  assert reserve2.liquidityIndex == assert_uint128(__liqInd_before);
+  assert __totSUP_debt != 0 => (reserve2.variableBorrowIndex == assert_uint128(__dbtInd_before));
+  assert getReserveNormalizedIncome(e, _asset) == __liqInd_before;
+  assert __totSUP_debt != 0 => (getReserveNormalizedVariableDebt(e, _asset) == __dbtInd_before);
+    
+  mathint __totSUP_aToken__; __totSUP_aToken__ = to_mathint(aTokenTotalSupplyCVL(_atoken, e));
+  mathint __totSUP_debt__;   __totSUP_debt__   = to_mathint(aTokenTotalSupplyCVL(_debt, e));
+  uint128 __virtual_bal__ = getReserveDataExtended(_asset).virtualUnderlyingBalance;
+  
+  //THE ASSERTION
+  assert to_mathint(__totSUP_aToken__) <= __virtual_bal__ + __totSUP_debt__ + CONST
+    + (reserve2.liquidityIndex / RAY()) + (reserve2.variableBorrowIndex / RAY());
+}
+
+
+
+
+/*=====================================================================================
+  Rule: solvency__liquidationCall
+  =====================================================================================*/
+
+rule solvency__liquidationCall(env e, address _asset) {
+  init_state();
+
+  address _atoken = currentContract._reserves[_asset].aTokenAddress;
+  address _debt = currentContract._reserves[_asset].variableDebtTokenAddress;
+  address _stb = currentContract._reserves[_asset].stableDebtTokenAddress;
+  tokens_addresses_limitations(_atoken,_debt,_stb,_asset);
+
+  require aTokenToUnderlying[_atoken]==_asset; require aTokenToUnderlying[_debt]==_asset; require aTokenToUnderlying[_stb]==_asset;
+
+  DataTypes.ReserveData reserve = getReserveDataExtended(_asset);
+  require reserve.lastUpdateTimestamp <= require_uint40(e.block.timestamp);
+
+  // INDEXES REQUIREMENTS
+  uint256 __liqInd_before = getReserveNormalizedIncome(e, _asset);
+  uint256 __dbtInd_before = getReserveNormalizedVariableDebt(e, _asset);
+  uint128 __liqInd_beforeS = reserve.liquidityIndex;
+  uint128 __dbtInd_beforeS = reserve.variableBorrowIndex;
+  require RAY()<=__liqInd_before && RAY()<=__dbtInd_before;
+  require assert_uint128(RAY()) <= __liqInd_beforeS && assert_uint128(RAY()) <= __dbtInd_beforeS;
+  
+  mathint __totSUP_aToken; __totSUP_aToken = to_mathint(aTokenTotalSupplyCVL(_atoken, e));
+  mathint __totSUP_debt;  __totSUP_debt = to_mathint(aTokenTotalSupplyCVL(_debt, e));
+  uint128 __virtual_bal = getReserveDataExtended(_asset).virtualUnderlyingBalance;
+
+  // BASIC ASSUMPTION FOR THE RULE
+  require scaledTotalSupplyCVL(_stb)==0;
+  require isVirtualAccActive(reserve.configuration.data);
+
+  // THE MAIN REQUIREMENT
+  uint256 CONST;
+  require to_mathint(__totSUP_aToken) <= __virtual_bal + __totSUP_debt + CONST;
+
+  require __totSUP_aToken <= 10^27; // Without this requirement we get a timeout
+                                    // I believe it's due inaccure RAY-calculations.
+
+  // THE FUNCTION CALL
+  address receiverAddress; uint256 _amount; bytes params; uint16 referralCode; 
+  address collateralAsset; address user; uint256 debtToCover; bool receiveAToken;
+  liquidationCall(e, collateralAsset, _asset, user, debtToCover, receiveAToken);
+
+  DataTypes.ReserveData reserve2 = getReserveDataExtended(_asset);
+  assert reserve2.lastUpdateTimestamp == assert_uint40(e.block.timestamp);
+  //assert reserve2.liquidityIndex == assert_uint128(__liqInd_before);
+  assert __totSUP_debt != 0 => (reserve2.variableBorrowIndex == assert_uint128(__dbtInd_before));
+  //assert getReserveNormalizedIncome(e, _asset) == __liqInd_before;
+  assert __totSUP_debt != 0 => (getReserveNormalizedVariableDebt(e, _asset) == __dbtInd_before);
+  
+  mathint __totSUP_aToken__; __totSUP_aToken__ = to_mathint(aTokenTotalSupplyCVL(_atoken, e));
+  mathint __totSUP_debt__;   __totSUP_debt__   = to_mathint(aTokenTotalSupplyCVL(_debt, e));
+  uint128 __virtual_bal__ = getReserveDataExtended(_asset).virtualUnderlyingBalance;
+  
+  //THE ASSERTION
+  assert to_mathint(__totSUP_aToken__) <= __virtual_bal__ + __totSUP_debt__ + CONST;
+}
+
