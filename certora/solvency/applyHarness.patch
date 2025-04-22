@@ -6,7 +6,7 @@ diff -ruN .gitignore .gitignore
 +!.gitignore
 \ No newline at end of file
 diff -ruN src/contracts/dependencies/gnosis/contracts/GPv2SafeERC20.sol src/contracts/dependencies/gnosis/contracts/GPv2SafeERC20.sol
---- src/contracts/dependencies/gnosis/contracts/GPv2SafeERC20.sol	2025-04-22 12:43:56.314294699 +0300
+--- src/contracts/dependencies/gnosis/contracts/GPv2SafeERC20.sol	2025-04-22 12:54:16.327443177 +0300
 +++ src/contracts/dependencies/gnosis/contracts/GPv2SafeERC20.sol	2025-04-22 11:37:05.980482241 +0300
 @@ -10,6 +10,8 @@
    /// @dev Wrapper around a call to the ERC20 function `transfer` that reverts
@@ -43,7 +43,7 @@ diff -ruN src/contracts/dependencies/gnosis/contracts/GPv2SafeERC20.sol src/cont
  
    /// @dev Verifies that the last return was a successful `transfer*` call.
 diff -ruN src/contracts/protocol/libraries/logic/BorrowLogic.sol src/contracts/protocol/libraries/logic/BorrowLogic.sol
---- src/contracts/protocol/libraries/logic/BorrowLogic.sol	2025-04-22 12:43:56.326294835 +0300
+--- src/contracts/protocol/libraries/logic/BorrowLogic.sol	2025-04-22 12:54:16.332443262 +0300
 +++ src/contracts/protocol/libraries/logic/BorrowLogic.sol	2025-04-22 11:37:05.982482279 +0300
 @@ -160,7 +160,7 @@
      DataTypes.ReserveData storage reserve = reservesData[params.asset];
@@ -85,7 +85,7 @@ diff -ruN src/contracts/protocol/libraries/logic/BorrowLogic.sol src/contracts/p
 +  function repay_hook_4(DataTypes.ReserveCache memory reserveCache) internal {}
  }
 diff -ruN src/contracts/protocol/libraries/logic/LiquidationLogic.sol src/contracts/protocol/libraries/logic/LiquidationLogic.sol
---- src/contracts/protocol/libraries/logic/LiquidationLogic.sol	2025-04-22 12:43:56.326294835 +0300
+--- src/contracts/protocol/libraries/logic/LiquidationLogic.sol	2025-04-22 12:54:16.332443262 +0300
 +++ src/contracts/protocol/libraries/logic/LiquidationLogic.sol	2025-04-22 11:50:09.857604321 +0300
 @@ -210,7 +210,9 @@
      DataTypes.ReserveData storage debtReserve = reservesData[params.debtAsset];
@@ -982,7 +982,7 @@ diff -ruN src/contracts/protocol/libraries/logic/LiquidationLogic.sol.rej src/co
 +     // Transfers the debt asset being repaid to the aToken, where the liquidity is kept
 +     IERC20(params.debtAsset).safeTransferFrom(
 diff -ruN src/contracts/protocol/libraries/logic/ReserveLogic.sol src/contracts/protocol/libraries/logic/ReserveLogic.sol
---- src/contracts/protocol/libraries/logic/ReserveLogic.sol	2025-04-22 12:43:56.326294835 +0300
+--- src/contracts/protocol/libraries/logic/ReserveLogic.sol	2025-04-22 12:54:16.332443262 +0300
 +++ src/contracts/protocol/libraries/logic/ReserveLogic.sol	2025-04-22 11:37:05.982482279 +0300
 @@ -47,17 +47,19 @@
      DataTypes.ReserveData storage reserve
