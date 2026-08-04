@@ -51,6 +51,7 @@ jobs:
           job-name: "Certora Prover Run"
           certora-key: ${{ secrets.CERTORAKEY }}
           install-java: true
+          auto-rerun-timeouts: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 # Put back the following rule after ticket 8889 is closed
